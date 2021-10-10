@@ -7,7 +7,7 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 
-from warp import warp, inv_warp, bilinear_sampling
+from warp import *
 
 
 def loss_dcgan_gen(y_fake, focal_loss_gamma=0.):
@@ -15,7 +15,7 @@ def loss_dcgan_gen(y_fake, focal_loss_gamma=0.):
     loss function for DCGAN generator
     softplus function used
     """
-    fake_sum = torch.sum(F.softplus(-y_fake) * torch.sigmoid(-y_fake) ** focal_loss_gamma)
+    fake_sum = torch.sum(F.softplus(-y_fake) * F.sigmoid(-y_fake) ** focal_loss_gamma)
     fake_shape = torch.tensor(np.prod(y_fake.data.shape))
     return fake_sum / fake_shape
 
