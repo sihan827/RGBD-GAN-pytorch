@@ -7,7 +7,7 @@ import os
 import sys
 import yaml
 from PIL import Image
-
+from tqdm import tqdm
 import numpy as np
 import torch
 import torch.nn as nn
@@ -236,16 +236,17 @@ if __name__ == '__main__':
     else:
         gan = RGBDGAN(**update_args)
 
-    for epoch in range(iteration):
+    for epoch in tqdm(range(iteration), position=0, leave=True):
         for idx, (x_real, _) in enumerate(train_loader, 0):
             loss_gen, loss_dis = gan.update(x_real, epoch)
 
             if idx % 100 == 0:
-                print(epoch, ':', loss_gen.data, ',', loss_dis.data)
+                print(epoch, iteration, '||','loss_gen : ' ,round(loss_gen.data.tolist(),4), ', loss_dis : ', round(loss_dis.data.tolist(),4))
 
             if epoch % config['evaluation_sample_interval'] == 0:
                 stage = gan.get_stage(epoch)
                 sample_generate(generator, config['out'], stage, config, rows=8, cols=8)
+
 
 
 
