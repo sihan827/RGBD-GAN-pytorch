@@ -7,7 +7,7 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 
-from warp import warp, inv_warp, bilinear_sampling
+from util.warp import warp, inv_warp, bilinear_sampling
 
 
 def loss_dcgan_gen(y_fake, focal_loss_gamma=0.):
@@ -122,7 +122,13 @@ class Rotate3dLoss:
                                      new_dp_2[:, :, 2].reshape(-1, 1)], dim=1) * not_out_2[:, None]
 
         if occlusion_aware:
-            pass
+            # calculate occlusion
+            not_occluded_1 = warped_1[:, -1:] > new_dp_1[:, :, 2].reshape(-1, 1)
+            not_occluded_2 = warped_2[:, -1:] > new_dp_2[:, :, 2].reshape(-1, 1)
+            warped_1 = warped_1 * not_occluded_1
+            warped_2 = warped_2 * not_occluded_2
+            warped_1_target = warped_1_target * not_occluded_1
+            warped_2_target = warped_2_target * not_occluded_2
 
         if max_depth is not None:
             pass

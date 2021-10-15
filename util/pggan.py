@@ -9,6 +9,15 @@ import torch
 import torch.nn.functional as F
 
 
+def make_hidden(in_ch, batch_size, device):
+    """
+    make latent vectors z
+    """
+    z = torch.rand((batch_size, in_ch)).to(device)
+    norm = torch.sqrt(torch.sum(z ** 2, dim=1, keepdim=True) / in_ch + 1e-8)
+    return torch.divide(z, norm)
+
+
 def downsize_real(x_real, stage, max_stage=17):
     """
     downsize real images for PGGAN

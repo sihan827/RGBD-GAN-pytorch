@@ -9,7 +9,7 @@ import torch.nn.functional as F
 import numpy as np
 import math
 
-from utils.components import *
+from util.components import *
 
 
 class DiscriminatorBlockBase(nn.Module):
@@ -67,12 +67,12 @@ class DiscriminatorBlock(nn.Module):
             self.blur = Blur2d(blur_k)
 
     def forward(self, x):
-        x = self.relu(self.bn1(self.conv1(x)))
+        x_ = self.relu(self.bn1(self.conv1(x)))
         if self.res:
             shortcut = self.conv_shortcut(x)
-            x = self.bn2(self.conv2(x)) + shortcut
+            x = self.bn2(self.conv2(x_)) + shortcut
         else:
-            x = self.bn2(self.conv2(x))
+            x = self.bn2(self.conv2(x_))
         x = self.relu(x)
         if self.enable_blur:
             x = self.blur(self.pool(x))
@@ -86,18 +86,18 @@ class Discriminator(nn.Module):
     """
     discriminator for GAN
     """
-    def __init__(self, ch=512, out_dim=1, enable_blur=False, res=False):
+    def __init__(self, ch=512, out_dim=1, enable_blur=False, res=False, device=torch.device('cuda')):
         super(Discriminator, self).__init__()
         self.max_stage = 17
         self.enable_blur = enable_blur
 
         self.blocks = nn.Sequential(
             DiscriminatorBlockBase(ch, out_dim), # (4, 4)
-            DiscriminatorBlock(ch, ch, enable_blur=enable_blur, res=res),  # (8, 8)
-            DiscriminatorBlock(ch, ch, enable_blur=enable_blur, res=res),  # (16, 16)
-            DiscriminatorBlock(ch, ch, enable_blur=enable_blur, res=res),  # (32, 32)
-            DiscriminatorBlock(ch // 2, ch, enable_blur=enable_blur, res=res),  # (64, 64)
-            DiscriminatorBlock(ch // 4, ch // 2, enable_blur=enable_blur, res=res)  # (128, 128)
+            DiscriminatorBlock(ch, ch, enable_blur=enable_blur, res=res, device=device),  # (8, 8)
+            DiscriminatorBlock(ch, ch, enable_blur=enable_blur, res=res, device=device),  # (16, 16)
+            DiscriminatorBlock(ch, ch, enable_blur=enable_blur, res=res, device=device),  # (32, 32)
+            DiscriminatorBlock(ch // 2, ch, enable_blur=enable_blur, res=res, device=device),  # (64, 64)
+            DiscriminatorBlock(ch // 4, ch // 2, enable_blur=enable_blur, res=res, device=device)  # (128, 128)
         )
 
         self.ins = nn.Sequential(
@@ -237,19 +237,19 @@ class DCGANGenerator(nn.Module):
 
         # initialize depth weight and bias
         for out in self.outs:
-            nn.init.zeros_(out.weight[-1])
-            nn.init.constant_(out.bias[-1], math.log(math.e ** (initial_depth - 1)))
+            nn.init.zeros_(out.w[-1])
+            nn.init.constant_(out.b[-1], math.log(math.e ** (initial_depth - 1)))
 
         self.n_blocks = len(self.blocks)
         self.image_size = 128
 
-    def make_hidden(self, batch_size):
-        """
-        make latent vectors z
-        """
-        z = torch.rand((batch_size, self.in_ch)).to(self.device)
-        norm = torch.sqrt(torch.sum(z ** 2, dim=1, keepdim=True) / self.in_ch * 1e-8)
-        return torch.divide(z, norm)
+    # def make_hidden(self, batch_size):
+    #     """
+    #     make latent vectors z
+    #     """
+    #     z = torch.rand((batch_size, self.in_ch)).to(self.device)
+    #     norm = torch.sqrt(torch.sum(z ** 2, dim=1, keepdim=True) / self.in_ch + 1e-8)
+    #     return torch.divide(z, norm)
 
     def forward(self, z, stage, theta=None, style_mixing_rate=None, add_noise=False, return_feature=False):
         stage = min(stage, self.max_stage - 1e-8)
