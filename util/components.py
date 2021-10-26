@@ -72,6 +72,22 @@ class EqualizedLRLinear(nn.Module):
         return F.linear(x, self.w * self.scale, self.b)
 
 
+class MinibatchStd(nn.Module):
+    """
+    calculate minibatch std to avoid mode collapse
+    """
+    def __init__(self):
+        super(MinibatchStd, self).__init__()
+
+    def forward(self, x):
+        size = list(x.size())
+        size[1] = 1
+
+        std = torch.std(x, dim=0)
+        mean = torch.mean(std)
+        return torch.cat((x, mean.repeat(size)), dim=1)
+
+
 class Blur2d(nn.Module):
     """
     2d blurring layer

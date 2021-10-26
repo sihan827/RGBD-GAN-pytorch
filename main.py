@@ -18,6 +18,8 @@ from torchvision.transforms import transforms
 from util.save_images import convert_batch_images
 from update import RGBDGAN
 from util.pggan import make_hidden
+from networks import PGGANGenerator, PGGANDiscriminator
+from trainer import TrainerPGGAN
 
 
 def sample_generate(gen, dst, stage, config, rows=8, cols=8, z=None, seed=0, subdir='preview'):
@@ -62,76 +64,17 @@ def sample_generate(gen, dst, stage, config, rows=8, cols=8, z=None, seed=0, sub
     Image.fromarray(x).save(preview_path)
 
 
-def get_dataset(path):
+def get_dataset(path, out_res):
     """
     get dataset
     """
-    transform = transforms.Compose([transforms.ToTensor()])
+    transform = transforms.Compose([
+        transforms.Resize(out_res),
+        transforms.CenterCrop(out_res),
+        transforms.ToTensor(),
+        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+    ])
     return ImageFolder(path, transform=transform)
-
-
-def setup_generator(config):
-    """
-    prepare generator for training
-    """
-    #device = torch.device('cuda:' + str(config['gpu']))
-    device = torch.device('cuda')
-    rgbd = False if config['rgb'] else True
-    if config['generator_architecture'] == 'stylegan':
-        assert False, f"{config['generator_architecture']} is not suppoerted"
-    elif config['generator_architecture'] == 'dcgan':
-        from networks import DCGANGenerator
-        generator = DCGANGenerator(config['ch'], enable_blur=config['enable_blur'], rgbd=rgbd, use_encoder=config['bigan'],
-                                   use_occupancy_net=config['use_occupancy_net_loss'], device=device)
-    elif config['generator_architecture'] == 'deepvoxels':
-        assert False, f"{config['generator_architecture']} is not suppoerted"
-    else:
-        assert False, f"{config['generator_architecture']} is not suppoerted"
-
-    return generator
-
-
-def setup_discriminator(config):
-    """
-    prepare discriminator for training
-    """
-    #device = torch.device('cuda:' + str(config['gpu']))
-    device = torch.device('cuda')
-    from networks import Discriminator
-    num_z = 1 if config['generator_architecture'] == "dcgan" else 2
-    discriminator = None
-    if config["bigan"]:
-        pass
-    else:
-        discriminator = Discriminator(ch=config['ch'], enable_blur=config['enable_blur'], res=config['res_dis'],
-                                      device=device)
-
-    return discriminator
-
-
-class RunningHelper:
-    """
-    prepare configs, optimizers, device and etc.
-    """
-    def __init__(self, config):
-        self.config = config
-        #self.device = torch.device('cuda:' + str(config['gpu']))
-        self.device = torch.device('cuda')
-
-    @property
-    def keep_smoothed_gen(self):
-        return self.config['keep_smoothed_gen']
-
-    @property
-    def stage_interval(self):
-        return self.config['stage_interval']
-
-    def print_log(self, msg):
-        print('[Device {}] {}'.format(self.device.index, msg))
-
-    def make_optimizer_adam(self, model, lr, beta1, beta2):
-        self.print_log('Use Adam Optimizer with lr = {}, beta1 = {}, beta2 = {}'.format(lr, beta1, beta2))
-        return torch.optim.Adam(model.parameters(), lr=lr, betas=(beta1, beta2))
 
 
 class CameraParamPrior:
@@ -164,89 +107,78 @@ class CameraParamPrior:
         return thetas
 
 
-
 if __name__ == '__main__':
+    # parse arguments
     parser = argparse.ArgumentParser()
-    #parser.add_argument("--gpu", "-g", type=int, default=0)
-    parser.add_argument("--config_path", type=str, default="configs/ffhq_pggan_test.yml")
+    parser.add_argument("--root", type=str, default="./", help="directory contains the data and outputs")
+    parser.add_argument("--config_path", type=str, default="configs/ffhq_pggan_test.yml", help="config file path")
     args = parser.parse_args()
 
+    # make directory (if not exists)
+    root = args.root
+    checkpoint_dir = root + 'checkpoint/'
+    out_dir = root + 'output/'
+    weight_dir = root + 'weight/'
+    if not os.path.exists(checkpoint_dir):
+        os.makedirs(checkpoint_dir)
+    if not os.path.exists(out_dir):
+        os.makedirs(out_dir)
+    if not os.path.exists(weight_dir):
+        os.makedirs(weight_dir)
+
+    # get yml config file
     with open(args.config_path) as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
 
-    #config['gpu'] = args.gpu
-    print(config['stage_interval'])
+    # get dataset
+    data_dir = config['dataset_path']
+    out_res = config['out_res']
+    dataset = get_dataset(data_dir, out_res)
 
-    running_helper = RunningHelper(config)
+    # get config options from yml file
+    size_starting_epochs = [int(epochs) for epochs in config['size_starting_epochs'].split(',')]
+    batchsize = [int(bsize) for bsize in config['batchsize'].split(',')]
+    growing_epochs = [int(epochs) for epochs in config['growing_epochs'].split(',')]
 
-    # setup generator and discriminator
-    generator = setup_generator(config)
-    discriminator = setup_discriminator(config)
-
-    models = [generator, discriminator]
-    model_names = ['Generator', 'Discriminator']
-
-    # if keep_smoothed_gen is True
-    if running_helper.keep_smoothed_gen:
-        pass
-
-    # set gpu to model
-    generator.to(running_helper.device)
-    discriminator.to(running_helper.device)
-
-    if torch.cuda.device_count() > 1:
-        generator = nn.DataParallel(generator)
-        discriminator = nn.DataParallel(discriminator)
-
-    # 일단 기본 ToTensor로 0~1 사이 값으로 학습시킨 후 실제 코드대로 -1~1사이 값으로 학습
-    # 일단 데이터 10000개만으로 학습
-    dataset = get_dataset(config['dataset_path'])
-    train_set, val_set = torch.utils.data.random_split(dataset, [69000, 1000])
-    print(len(val_set))
-    train_loader = data.DataLoader(val_set, batch_size=config['batchsize'], shuffle=True, num_workers=2)
-
-    prior = CameraParamPrior(config)
+    schedule = [size_starting_epochs, batchsize, growing_epochs]
     iteration = config['iteration']
+    ch = config['ch']
 
-    optimizer = None
-    if config['generator_architecture'] == "stylegan":
-        pass
-    elif config['generator_architecture'] == 'dcgan':
-        optimizer = {
-            "gen": running_helper.make_optimizer_adam(generator, config['adam_alpha_g'], config['adam_beta1'],
-                                                      config['adam_beta2']),
-            "dis": running_helper.make_optimizer_adam(discriminator, config['adam_alpha_d'], config['adam_beta1'],
-                                                      config['adam_beta2'])
-        }
-    elif config['generator_architecture'] == 'deepvoxels':
-        pass
+    adam_lr_g = config['adam_lr_g']
+    adam_lr_d = config['adam_lr_d']
+    adam_beta1 = config['adam_beta1']
+    adam_beta2 = config['adam_beta2']
+    lambda_gp = config['lambda_gp']
 
-    update_args = {
-        "models": models,
-        "optimizer": optimizer,
-        "config": config,
-        "lambda_gp": config['lambda_gp'],
-        "smoothing": config['smoothing'],
-        "prior": prior
+    device = torch.device('cuda' if torch.cuda.is_available() and config['use_cuda'] else 'cpu')
+
+    if config['architecture'] == 'pggan':
+        dis = PGGANDiscriminator(ch, out_res, ch=ch).to(device)
+        gen = PGGANGenerator(ch, out_res, ch=ch).to(device)
+    else:
+        dis = None
+        gen = None
+
+    optim_d = torch.optim.Adam(dis.parameters(), lr=adam_lr_d, betas=(adam_beta1, adam_beta2))
+    optim_g = torch.optim.Adam(gen.parameters(), lr=adam_lr_g, betas=(adam_beta1, adam_beta2))
+
+    config_train = {
+        'generator': gen,
+        'discriminator': dis,
+        'optim_gen': optim_g,
+        'optim_dis': optim_d,
+        'dataset': dataset,
+        'schedule': schedule,
+        'latent_size': ch,
+        'iteration': iteration,
+        'lambda_gp': lambda_gp,
+        'out_res': out_res,
+        'root_path': root
     }
 
-    gan = None
-    if config['rgb']:
-        pass
-    else:
-        gan = RGBDGAN(**update_args)
+    trainer = TrainerPGGAN(config=config_train, device=device)
 
-    for epoch in tqdm(range(iteration), position=0, leave=True):
-        for idx, (x_real, _) in enumerate(train_loader, 0):
-            loss_gen, loss_dis = gan.update(x_real, epoch)
-
-            if idx % 100 == 0:
-                print(epoch, iteration, '||','loss_gen : ' ,round(loss_gen.data.tolist(),4), ', loss_dis : ', round(loss_dis.data.tolist(),4))
-
-            if epoch % config['evaluation_sample_interval'] == 0:
-                stage = gan.get_stage(epoch)
-                sample_generate(generator, config['out'], stage, config, rows=8, cols=8)
-
+    trainer.train()
 
 
 

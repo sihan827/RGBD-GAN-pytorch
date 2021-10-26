@@ -51,6 +51,151 @@ def get_camera_matrices(thetas, order=(0, 1, 2), device=torch.device('cuda')):
     return mat
 
 
+class RGBGAN():
+    """
+    class of RGB-GAN updater in one epoch
+    """
+    def __init__(self, models, optimizer, dataset, schedule, latent_size, device=torch.device('cuda')):
+        self.gen = models['generator'].to(device)
+        self.dis = models['discriminator'].to(device)
+
+        self.optim_g = optimizer['generator']
+        self.optim_d = optimizer['discriminator']
+
+        self.dataset = dataset
+        self.schedule = schedule
+        self.latent_size = latent_size
+        self.device = device
+
+
+    def get_z_fake_data(self, batch_size):
+        return make_hidden(self.config['ch'], batch_size, self.device)
+
+    def update(self, x_real, iteration):
+        use_rotate = True if iteration > self.config['start_rotation'] else False
+
+        self.gen.train()
+        self.dis.train()
+
+        if self.config['generator_architecture'] == "stylegan":
+            pass
+        optim_g = self.optimizer['gen']
+        optim_d = self.optimizer['dis']
+
+        optim_g.zero_grad()
+        optim_d.zero_grad()
+
+        stage = self.get_stage(iteration)
+        batch_size = self.config['batchsize']
+
+        z = torch.cat([self.get_z_fake_data(batch_size // 2)] * 2, dim=0)
+
+        thetas = self.prior.sample(batch_size)
+        random_camera_matrices = get_camera_matrices(thetas, device=self.device)
+        thetas = torch.cat([torch.cos(thetas[:, :3]), torch.sin(thetas[:, :3]), thetas[:, 3:]], dim=1)
+
+        x_real = x_real.to(self.device)
+        x_real = downsize_real(x_real, stage)
+        v_x_real = torch.autograd.Variable(x_real, requires_grad=True).to(self.device)
+        image_size = x_real.shape[2]
+
+        x_fake = self.gen(z, stage, thetas)
+        v_x_fake = torch.autograd.Variable(x_fake, requires_grad=True).to(self.device)
+
+
+        if self.config['bigan']:
+            assert False, "bigan is not supported"
+
+        y_fake, feat = self.dis(v_x_fake[:, :3], stage=stage, return_hidden=True)
+        # gan loss for generator
+        loss_gen = loss_dcgan_gen(y_fake)
+        assert not torch.isnan(loss_gen.data)
+
+        if use_rotate:
+            # 3d loss
+            loss_rotate, warped_dp = self.rotate_3d_loss(x_fake[:batch_size // 2],
+                                                         random_camera_matrices[:batch_size // 2],
+                                                         x_fake[batch_size // 2:],
+                                                         random_camera_matrices[batch_size // 2:],
+                                                         iteration >= self.config['start_occlusion_aware'])
+            if 'rotate_feature' in self.config:
+                if self.config['rotate_feature']:
+                    downsample_rate = x_real.shape[2] // feat.shape[2]
+                    depth = F.avg_pool2d(x_real[:, -1:], downsample_rate, downsample_rate, 0)
+                    feat = torch.cat([feat, depth], dim=1)
+                    loss_rotate_feature, _ = self.rotate_3d_loss_feature(feat[:batch_size // 2],
+                                                                         random_camera_matrices[:batch_size // 2],
+                                                                         feat[batch_size // 2:],
+                                                                         random_camera_matrices[batch_size // 2:],
+                                                                         iteration >= self.config['start_occlusion_aware'])
+                    loss_rotate += loss_rotate_feature
+
+            if self.config['lambda_depth'] > 0:
+                # depth loss
+                loss_rotate += torch.mean(F.relu(self.config['depth_min'] - x_fake[:, -1]) ** 2) * self.config['lambda_depth']
+            assert not torch.isnan(loss_rotate.data)
+
+            lambda_rotate = self.config['lambda_rotate'] if 'lambda_rotate' in self.config else 2
+            lambda_rotate = lambda_rotate if image_size <= 128 else lambda_rotate * 2
+            loss_gen += loss_rotate * lambda_rotate
+
+            if self.config['use_occupancy_net_loss']:
+                pass
+
+        loss_gen.backward()
+        if self.config['generator_architecture'] == 'stylegan':
+            pass
+        optim_g.step()
+
+        if self.smoothed_gen is not None:
+            pass
+
+        if self.config['bigan']:
+            assert False, "bigan is not supported"
+
+        y_fake, feat = self.dis(x_fake[:, :3], stage=stage, return_hidden=True)
+        y_real = self.dis(v_x_real, stage=stage)
+        loss_dis = loss_dcgan_dis(y_fake, y_real)
+
+        if not self.config['sn'] and self.lambda_gp > 0:
+            grad_x_perturbed, = torch.autograd.grad([y_real], [v_x_real], grad_outputs=torch.ones_like(y_real),
+                                                    create_graph=True)
+            grad_l2 = torch.sqrt(torch.sum(grad_x_perturbed ** 2, dim=(1, 2, 3)))
+            loss_l2 = torch.sum((grad_l2 - 0.0) ** 2) / torch.prod(torch.tensor(grad_l2.shape)).to(self.device)
+            loss_gp = self.lambda_gp * loss_l2
+
+            loss_dis = loss_dis + loss_gp
+
+        if use_rotate and 'rotate_feature' in self.config:
+            if self.config['rotate_feature']:
+                downsample_rate = x_real.shape[2] // feat.shape[2]
+                depth = F.avg_pool2d(x_real[:, -1:], downsample_rate, downsample_rate, 0)
+                feat = torch.cat([feat, depth], dim=1)
+                loss_rotate_feature, _ = self.rotate_3d_loss_feature(feat[:batch_size // 2],
+                                                                     random_camera_matrices[:batch_size // 2],
+                                                                     feat[batch_size // 2:],
+                                                                     random_camera_matrices[batch_size // 2:],
+                                                                     iteration >= self.config['start_occlusion_aware'])
+                loss_dis -= loss_rotate_feature
+
+                if self.config['sn'] and self.lambda_gp > 0:
+                    grad_x_perturbed, = torch.autograd.grad([feat], [v_x_fake], grad_outputs=torch.ones_like(feat),
+                                                            create_graph=True)
+                    print(grad_x_perturbed)
+                    grad_l2 = torch.sqrt(torch.sum(grad_x_perturbed ** 2, dim=(1, 2, 3)))
+                    loss_l2 = torch.sum((grad_l2 - 0.0) ** 2) / torch.prod(torch.tensor(grad_l2.shape)).to(self.device)
+                    loss_gp = self.lambda_gp * loss_l2
+                    loss_dis += loss_gp
+
+        assert not torch.isnan(loss_dis.data)
+
+        loss_dis.backward()
+        optim_d.step()
+
+        return loss_gen, loss_dis
+
+
+
 class RGBDGAN():
     """
     class of RGBD-GAN

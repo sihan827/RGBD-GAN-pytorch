@@ -1,36 +1,28 @@
-dataset_path: /hdd1/dataset/ffhq_thumbs  # please change
-image_path: image_dir/*.png  # please change
+dataset_path: /hdd1/dataset/ffhq_thumbs # path containing dataset
 
-nvprof: False
-adam_alpha_g: 0.001 # 'alpha in Adam optimizer'
-adam_alpha_d: 0.003 # 'alpha in Adam optimizer'
+adam_lr_g: 0.001 # 'lr in Adam optimizer'
+adam_lr_d: 0.001 # 'lr in Adam optimizer'
 adam_beta1: 0.0 # 'beta1 in Adam optimizer'
-adam_beta2: 0.999 # 'beta2 in Adam optimizer'
-lambda_gp: 1.0 #'Lambda GP'
-sn: False
-smoothing: 0.999 # ''
-keep_smoothed_gen: False # 'Whether to keep a smoothed version of generator.'
+adam_beta2: 0.99 # 'beta2 in Adam optimizer'
+lambda_gp: 10.0 #'Lambda GP'
 
-batchsize: 32
-stage_interval: 0,0,0,0,0,0,0,1000,1500,1600,1800,3000
-max_stage: 11 # 'Size of image.'
-iteration: 10000
+size_starting_epochs: 5,15,25,35,40
+batchsize: 16,16,16,8,4
+growing_epochs: 5,5,5,1,1
+iteration: 40
 #
 start_rotation: 2000
 start_occlusion_aware: 2000
 #
-auto_resume: False # 'Whether to automatically resume'
 #
 ch: 256 # '#Channels'
+out_res: 128
 #
 ## architecture
-rgb: False # rgb or rgbd
-use_occupancy_net_loss: False
-generator_architecture: dcgan # stylegan, dcgan, deepvoxels
-bigan: False
+architecture: pggan # stylegan, pggan, deepvoxels
+rgb: True # rgb or rgbd
+use_cuda: True
 rotate_conv_input: False
-res_dis: True
-focal_loss_gamma: 1.
 lambda_depth: 10
 depth_min: 1.0
 lambda_geometric: 3
