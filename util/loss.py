@@ -10,25 +10,25 @@ import numpy as np
 from util.warp import warp, inv_warp, bilinear_sampling
 
 
-def loss_dcgan_gen(y_fake, focal_loss_gamma=0.):
+def loss_gen_bce(y_fake):
     """
-    loss function for DCGAN generator
-    softplus function used
+    loss function with BCE on G
     """
-    fake_sum = torch.sum(F.softplus(-y_fake) * torch.sigmoid(-y_fake) ** focal_loss_gamma)
-    fake_shape = torch.tensor(np.prod(y_fake.data.shape))
-    return fake_sum / fake_shape
+    label_real = torch.ones_like(y_fake)
+    loss = F.binary_cross_entropy_with_logits(y_fake, label_real)
+    return loss
 
 
-def loss_dcgan_dis(y_fake, y_real):
+def loss_dis_bce(y_fake, y_real):
     """
-    loss function for DCGAN discriminator
-    softplus function used
+    loss function with BCE on D
     """
-    fake_loss = torch.sum(F.softplus(y_fake)) / torch.tensor(np.prod(y_fake.data.shape))
-    real_loss = torch.sum(F.softplus(y_real)) / torch.tensor(np.prod(y_real.data.shape))
+    label_fake = torch.zeros_like(y_fake)
+    label_real = torch.ones_like(y_real)
+    fake_loss = F.binary_cross_entropy_with_logits(y_fake, label_fake)
+    real_loss = F.binary_cross_entropy_with_logits(y_real, label_real)
 
-    return fake_loss + real_loss
+    return (fake_loss + real_loss) / 2
 
 
 class Rotate3dLoss:

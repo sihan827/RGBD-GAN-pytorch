@@ -16,7 +16,6 @@ from torchvision.datasets import ImageFolder
 from torchvision.transforms import transforms
 
 from util.save_images import convert_batch_images
-from update import RGBDGAN
 from util.pggan import make_hidden
 from networks import PGGANGenerator, PGGANDiscriminator
 from trainer import TrainerPGGAN

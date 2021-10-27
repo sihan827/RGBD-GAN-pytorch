@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 from torchvision.utils import make_grid, save_image
 
 from util.components import *
-from util.loss import loss_dcgan_dis, loss_dcgan_gen, Rotate3dLoss
+from util.loss import loss_gen_bce, loss_dis_bce, Rotate3dLoss
 
 
 class TrainerPGGAN:
@@ -118,9 +118,9 @@ class TrainerPGGAN:
                 gradient_penalty = self.lambda_gp * ((grad_norm - 1) ** 2).mean()
 
                 # backpropagate D loss
-                # gan의 loss function vs. D의 출력을 바로 사용
-                # loss_d = loss_dcgan_dis(y_fake, y_real) + gradient_penalty
-                loss_d = y_fake.mean() - y_real.mean() + gradient_penalty
+                # bce loss function vs. D의 출력을 바로 사용
+                loss_d = loss_dis_bce(y_fake, y_real) + gradient_penalty
+                # loss_d = y_fake.mean() - y_real.mean() + gradient_penalty
                 loss_d.backward()
                 self.optim_d.step()
 
@@ -129,9 +129,9 @@ class TrainerPGGAN:
                 y_fake = self.dis(x_fake)
 
                 # backpropagate G loss
-                # gan의 loss function vs. D의 출력을 바로 사용
-                # loss_g = loss_dcgan_gen(y_fake)
-                loss_g = -y_fake.mean()
+                # bce loss function vs. D의 출력을 바로 사용
+                loss_g = loss_gen_bce(y_fake)
+                # loss_g = -y_fake.mean()
                 loss_g.backward()
                 self.optim_g.step()
 
@@ -172,8 +172,9 @@ class TrainerPGGAN:
             with torch.no_grad():
                 # depth 추가 시 이 쪽을 수정하여 출력 grid에 rgb와 depth가 붙어있도록 수정해야함.
                 self.gen.eval()
-                torch.save(checkpoint, self.checkpoint_dir + 'checkpoint_epoch_%d.pth' % epoch)
-                torch.save(self.gen.state_dict(), self.weight_dir + 'gen_weight_epoch_%d.pth' % epoch)
+                if epoch == self.iteration:
+                    torch.save(checkpoint, self.checkpoint_dir + 'checkpoint_epoch_%d.pth' % epoch)
+                    torch.save(self.gen.state_dict(), self.weight_dir + 'gen_weight_epoch_%d.pth' % epoch)
                 out_imgs = self.gen(self.fixed_latent)
                 out_grid = make_grid(
                     out_imgs, normalize=True, nrow=4, scale_each=True, padding=int(0.5*(2**self.gen.depth))

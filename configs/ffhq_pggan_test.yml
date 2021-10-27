@@ -4,12 +4,12 @@ adam_lr_g: 0.001 # 'lr in Adam optimizer'
 adam_lr_d: 0.001 # 'lr in Adam optimizer'
 adam_beta1: 0.0 # 'beta1 in Adam optimizer'
 adam_beta2: 0.99 # 'beta2 in Adam optimizer'
-lambda_gp: 10.0 #'Lambda GP'
+lambda_gp: 1.0 #'Lambda GP'
 
 size_starting_epochs: 5,15,25,35,40
 batchsize: 16,16,16,8,4
 growing_epochs: 5,5,5,1,1
-iteration: 40
+iteration: 45
 #
 start_rotation: 2000
 start_occlusion_aware: 2000
