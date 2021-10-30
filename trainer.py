@@ -58,6 +58,7 @@ class TrainerPGGAN:
         # initial definition
         running_loss_d = 0.
         running_loss_g = 0.
+        running_loss = 0.
         iter_num = 0
 
         epoch_losses_d = []
@@ -101,7 +102,7 @@ class TrainerPGGAN:
                     samples = F.interpolate(samples[0], size=size).to(self.device)
                 else:
                     samples = samples[0].to(self.device)
-                self.optim_d.zero_grad()
+                # self.optim_d.zero_grad()
                 latent_z = torch.randn(samples.size(0), self.latent_size, 1, 1, device=self.device)
                 x_fake = self.gen(latent_z)
                 y_fake = self.dis(x_fake.detach())
@@ -119,22 +120,31 @@ class TrainerPGGAN:
 
                 # backpropagate D loss
                 # bce loss function vs. D의 출력을 바로 사용
-                loss_d = loss_dis_bce(y_fake, y_real) + gradient_penalty
+                loss_d = loss_dis_bce(y_fake, y_real)
+                # loss_d += gradient_penalty
                 # loss_d = y_fake.mean() - y_real.mean() + gradient_penalty
-                loss_d.backward()
-                self.optim_d.step()
+                # loss_d.backward()
+                # self.optim_d.step()
 
                 # update G
-                self.optim_g.zero_grad()
+                # self.optim_g.zero_grad()
                 y_fake = self.dis(x_fake)
 
                 # backpropagate G loss
                 # bce loss function vs. D의 출력을 바로 사용
                 loss_g = loss_gen_bce(y_fake)
                 # loss_g = -y_fake.mean()
-                loss_g.backward()
-                self.optim_g.step()
+                # loss_g.backward()
+                # self.optim_g.step()
+                
+                loss_one_stage = loss_d + loss_g
+                
+                self.optim_g.zero_grad()
+                self.optim_d.zero_grad()
 
+                loss_one_stage.backward()
+                
+                running_loss += loss_one_stage.item()
                 running_loss_d += loss_d.item()
                 running_loss_g += loss_g.item()
 
@@ -147,12 +157,14 @@ class TrainerPGGAN:
                 if i % 500 == 0:
                     running_loss_d /= iter_num
                     running_loss_g /= iter_num
+                    running_loss /= iter_num
                     print('iteration: %d, gp: %.2f' % (i, gradient_penalty))
-                    databar.set_description('loss_d: %.3f   loss_g: %.3f' % (running_loss_d, running_loss_g))
+                    databar.set_description('loss_d: %.3f   loss_g: %.3f   loss: %.3f' % (running_loss_d, running_loss_g, running_loss))
                     iter_num = 0
                     running_loss_d = 0.
                     running_loss_g = 0.
-
+                    running_loss = 0.
+                    
             # get total losses of one epoch
             epoch_losses_d.append(epoch_loss_d / tot_iter_num)
             epoch_losses_g.append(epoch_loss_g / tot_iter_num)
