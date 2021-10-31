@@ -42,7 +42,7 @@ def get_camera_matrices(thetas, order=(0, 1, 2), device=torch.device('cuda')):
     mat[:, 2, 3] = 1
 
     # update rotation for mat
-    for i in order:  # y_rot, x_rot, z_rot
+    for i in order:  # x_rot, y_rot, z_rot
         mat = update_camera_matrices(mat, (i + 1) % 3, (i + 2) % 3, thetas[:, i], device=device)
 
     # update translation for mat

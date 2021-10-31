@@ -73,6 +73,7 @@ def get_dataset(path, out_res):
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
     ])
+
     return ImageFolder(path, transform=transform)
 
 
@@ -139,28 +140,57 @@ if __name__ == '__main__':
     batchsize = [int(bsize) for bsize in config['batchsize'].split(',')]
     growing_epochs = [int(epochs) for epochs in config['growing_epochs'].split(',')]
 
+    # schedule, epoch, channel(z dimension)
     schedule = [size_starting_epochs, batchsize, growing_epochs]
     iteration = config['iteration']
     ch = config['ch']
 
+    # learning rate, lambda for gradient penalty
     adam_lr_g = config['adam_lr_g']
     adam_lr_d = config['adam_lr_d']
     adam_beta1 = config['adam_beta1']
     adam_beta2 = config['adam_beta2']
     lambda_gp = config['lambda_gp']
 
+    # rgbd, transform configs
+    rgbd = config['rgbd']
+    if rgbd:
+        start_rotation = config['start_rotation']
+        start_occlusion_aware = config['start_occlusion_aware']
+        lambda_geometric = config['lambda_geometric']
+        lambda_depth = config['lambda_depth']
+        depth_min = config['depth_min']
+
+        train_x_rotate = config['x_rotate']
+        train_y_rotate = config['y_rotate']
+        train_z_rotate = config['z_rotate']
+        train_x_translate = config['x_translate']
+        train_y_translate = config['y_translate']
+        train_z_translate = config['z_translate']
+
+        test_x_rotate = config['test_x_rotate']
+        test_y_rotate = config['test_y_rotate']
+        test_z_rotate = config['test_z_rotate']
+        test_x_translate = config['test_x_translate']
+        test_y_translate = config['test_y_translate']
+        test_z_translate = config['test_z_translate']
+
+    # device
     device = torch.device('cuda' if torch.cuda.is_available() and config['use_cuda'] else 'cpu')
 
+    # select GAN model
     if config['architecture'] == 'pggan':
         dis = PGGANDiscriminator(ch, out_res, ch=ch).to(device)
-        gen = PGGANGenerator(ch, out_res, ch=ch).to(device)
+        gen = PGGANGenerator(ch, out_res, ch=ch, rgbd=rgbd).to(device)
     else:
         dis = None
         gen = None
 
+    # prepare optimizers
     optim_d = torch.optim.Adam(dis.parameters(), lr=adam_lr_d, betas=(adam_beta1, adam_beta2))
     optim_g = torch.optim.Adam(gen.parameters(), lr=adam_lr_g, betas=(adam_beta1, adam_beta2))
 
+    # config values for training
     config_train = {
         'generator': gen,
         'discriminator': dis,
@@ -172,10 +202,35 @@ if __name__ == '__main__':
         'iteration': iteration,
         'lambda_gp': lambda_gp,
         'out_res': out_res,
-        'root_path': root
+        'root_path': root,
+        'rgbd': rgbd
     }
 
-    trainer = TrainerPGGAN(config=config_train, device=device)
+    # config values for transform
+    config_transform = {}
+
+    if rgbd:
+        config_transform['start_rotation'] = start_rotation
+        config_transform['start_occlusion_aware'] = start_occlusion_aware
+        config_transform['lambda_geometric'] = lambda_geometric
+        config_transform['lambda_depth'] = lambda_depth
+        config_transform['depth_min'] = depth_min
+
+        config_transform['train_x_rotate'] = train_x_rotate
+        config_transform['train_y_rotate'] = train_y_rotate
+        config_transform['train_z_rotate'] = train_z_rotate
+        config_transform['train_x_translate'] = train_x_translate
+        config_transform['train_y_translate'] = train_y_translate
+        config_transform['train_z_translate'] = train_z_translate
+
+        config_transform['test_x_rotate'] = test_x_rotate
+        config_transform['test_y_rotate'] = test_y_rotate
+        config_transform['test_z_rotate'] = test_z_rotate
+        config_transform['test_x_translate'] = test_x_translate
+        config_transform['test_y_translate'] = test_y_translate
+        config_transform['test_z_translate'] = test_z_translate
+
+    trainer = TrainerPGGAN(config_train=config_train, config_transform=config_transform, device=device)
 
     trainer.train()
 

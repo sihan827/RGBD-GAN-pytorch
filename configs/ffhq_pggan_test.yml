@@ -6,13 +6,13 @@ adam_beta1: 0.0 # 'beta1 in Adam optimizer'
 adam_beta2: 0.99 # 'beta2 in Adam optimizer'
 lambda_gp: 1.0 #'Lambda GP'
 
-size_starting_epochs: 5,15,25,35,40
+## schedule
+### 8, 16, 32, 64, 128
+size_starting_epochs: 5,15,25,45,55
 batchsize: 16,16,16,8,4
 growing_epochs: 5,5,5,1,1
-iteration: 45
-#
-start_rotation: 2000
-start_occlusion_aware: 2000
+iteration: 60
+
 #
 #
 ch: 256 # '#Channels'
@@ -20,12 +20,16 @@ out_res: 128
 #
 ## architecture
 architecture: pggan # stylegan, pggan, deepvoxels
-rgb: True # rgb or rgbd
+rgbd: True # rgb or rgbd
 use_cuda: True
-rotate_conv_input: False
+# rotate_conv_input: False
 lambda_depth: 10
 depth_min: 1.0
 lambda_geometric: 3
+
+## starting rotation (if rgbd: True)
+start_rotation: 30
+start_occlusion_aware: 30
 
 ## camera parameter prior
 ## rotation angle range (+-radian)

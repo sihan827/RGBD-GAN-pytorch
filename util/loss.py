@@ -66,7 +66,7 @@ class Rotate3dLoss:
 
         # homogeneous grid of image pixels (3, h * w)
         self.p = torch.tensor(np.asarray(
-            np.meshgrid(np.arange(size), np.arange(size)) + np.array([np.ones((size, size))])
+            np.meshgrid(np.arange(size), np.arange(size)) + [np.ones((size, size))]
         ).reshape(3, -1), dtype=torch.float32).to(self.device)
 
     def __call__(self, img_1, theta_1, img_2, theta_2, occlusion_aware=False, debug=False, max_depth=None, min_depth=None):

@@ -31,9 +31,13 @@ class ToRGB(nn.Module):
     """
     ToRGB block behind of G
     """
-    def __init__(self, in_ch, out_ch):
+    def __init__(self, in_ch, out_ch, rgbd=False):
         super(ToRGB, self).__init__()
         self.conv = EqualizedLRConv2d(in_ch, out_ch, kernel_size=(1, 1), stride=(1, 1))
+
+        if rgbd:
+            nn.init.constant_(self.conv.w[-1], 0)
+            nn.init.constant_(self.conv.b[-1], 0)
 
     def forward(self, x):
         return self.conv(x)
@@ -43,11 +47,15 @@ class GeneratorBlock(nn.Module):
     """
     generator block for PGGAN
     """
-    def __init__(self, in_ch, out_ch, base=False):
+    def __init__(self, in_ch, out_ch, rgbd=False, base=False):
         super(GeneratorBlock, self).__init__()
         if base:
             self.upsample = None
-            self.conv1 = EqualizedLRConv2d(in_ch, out_ch, kernel_size=(4, 4), stride=(1, 1), padding=(3, 3))
+            if rgbd:
+                # add conditional channel to latent z
+                self.conv1 = EqualizedLRConv2d(in_ch + 9, out_ch, kernel_size=(4, 4), stride=(1, 1), padding=(3, 3))
+            else:
+                self.conv1 = EqualizedLRConv2d(in_ch, out_ch, kernel_size=(4, 4), stride=(1, 1), padding=(3, 3))
         else:
             self.upsample = nn.Upsample(scale_factor=2)
             self.conv1 = EqualizedLRConv2d(in_ch, out_ch, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
@@ -114,14 +122,16 @@ class PGGANGenerator(nn.Module):
     """
     generator architecture for PGGAN
     """
-    def __init__(self, latent_size, out_res, ch=512):
+    def __init__(self, latent_size, out_res, ch=512, rgbd=False):
         super(PGGANGenerator, self).__init__()
         self.depth = 1
         self.alpha = 1
         self.fade_iters = 0
         self.upsample = nn.Upsample(scale_factor=2)
-        self.current_net = nn.ModuleList([GeneratorBlock(latent_size, ch, base=True)])  # 4x4
-        self.toRGBs = nn.ModuleList([ToRGB(latent_size, 3)])
+        self.current_net = nn.ModuleList([GeneratorBlock(latent_size, ch, rgbd=rgbd, base=True)])  # 4x4
+        self.rgbd = rgbd
+        img_ch = 4 if rgbd else 3
+        self.toRGBs = nn.ModuleList([ToRGB(latent_size, img_ch, rgbd=rgbd)])
 
         for d in range(2, int(np.log2(out_res))):
             if d < 5:
@@ -132,9 +142,15 @@ class PGGANGenerator(nn.Module):
                 in_ch, out_ch = int(ch / 2 ** (d - 5)), int(ch / 2 ** (d - 4))
 
             self.current_net.append(GeneratorBlock(in_ch, out_ch))
-            self.toRGBs.append(ToRGB(out_ch, 3))
+            self.toRGBs.append(ToRGB(out_ch, img_ch, rgbd=rgbd))
 
-    def forward(self, x):
+    def forward(self, x, theta=None):
+        # prepare latent vector with theta condition if rgbd is True
+        if self.rgbd and theta is None:
+            assert False, "if rgbd is True, theta must not be None"
+        if self.rgbd:
+            x = torch.cat([x, theta * 10], dim=1)
+
         for block in self.current_net[:self.depth - 1]:
             x = block(x)
         out = self.current_net[self.depth - 1](x)
