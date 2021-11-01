@@ -40,6 +40,7 @@ class TrainerPGGAN:
         self.checkpoint_dir = config_train['root_path'] + 'checkpoint/'
         self.out_dir = config_train['root_path'] + 'output/'
         self.weight_dir = config_train['root_path'] + 'weight/'
+        self.loss_dir = config_train['root_path'] + 'loss/'
 
         self.rgbd = config_train['rgbd']
 
@@ -75,8 +76,8 @@ class TrainerPGGAN:
         running_loss_g = 0.
         iter_num = 0
 
-        epoch_losses_d = []
-        epoch_losses_g = []
+        epoch_losses_d = np.zeros(self.iteration)
+        epoch_losses_g = np.zeros(self.iteration)
 
         batch_size = self.schedule[1][0]
         growing = self.schedule[2][0]
@@ -111,26 +112,28 @@ class TrainerPGGAN:
                     size = 2 ** (self.gen.depth + 1)
                     print("Output Resolution: %d x %d" % (size, size))
 
-            print("epoch: %i/%i" % (int(epoch), int(self.iteration)))
+            print("epoch: %i/%i, batch size: %i" % (int(epoch), int(self.iteration), int(batch_size)))
             databar = tqdm(data_loader)
 
             for i, samples in enumerate(databar):
 
-                # prepare random_camera_matrix
-                thetas = None
-                if self.rgbd:
-                    thetas = self.camera_param.get_sample_param(batch_size)
-                    random_camera_matrix = self.camera_param.get_ex_matrices(thetas)
-                    thetas = torch.reshape(
-                        torch.cat([torch.cos(thetas[:, :3]), torch.sin(thetas[:, :3]), thetas[:, 3:]], dim=1),
-                        (batch_size, 9, 1, 1)
-                    )
-
-                # update D
+                # prepare samples
                 if size != self.out_res:
                     samples = F.interpolate(samples[0], size=size).to(self.device)
                 else:
                     samples = samples[0].to(self.device)
+
+                # prepare random_camera_matrix
+                thetas = None
+                if self.rgbd:
+                    thetas = self.camera_param.get_sample_param(samples.size(0))
+                    random_camera_matrix = self.camera_param.get_ex_matrices(thetas)
+                    thetas = torch.reshape(
+                        torch.cat([torch.cos(thetas[:, :3]), torch.sin(thetas[:, :3]), thetas[:, 3:]], dim=1),
+                        (samples.size(0), 9, 1, 1)
+                    )
+
+                # update D
                 self.optim_d.zero_grad()
                 if self.rgbd:
                     latent_z = torch.cat(
@@ -139,6 +142,7 @@ class TrainerPGGAN:
                     )
                 else:
                     latent_z = torch.randn(samples.size(0), self.latent_size, 1, 1, device=self.device)
+
                 x_fake = self.gen(latent_z, theta=thetas)
                 y_fake = self.dis(x_fake[:, :3].detach())
                 y_real = self.dis(samples)
@@ -169,10 +173,10 @@ class TrainerPGGAN:
                 if use_rotate:
                     # 3d loss
                     loss_rotate, warped_dp = self.rotate_3d_loss(
-                        x_fake[:batch_size // 2],
-                        random_camera_matrix[:batch_size // 2],
-                        x_fake[batch_size // 2:],
-                        random_camera_matrix[batch_size // 2:],
+                        x_fake[:samples.size(0) // 2],
+                        random_camera_matrix[:samples.size(0) // 2],
+                        x_fake[samples.size(0) // 2:],
+                        random_camera_matrix[samples.size(0) // 2:],
                         epoch >= self.start_occlusion_aware
                     )
 
@@ -211,8 +215,8 @@ class TrainerPGGAN:
                     running_loss_g = 0.
 
             # get total losses of one epoch
-            epoch_losses_d.append(epoch_loss_d / tot_iter_num)
-            epoch_losses_g.append(epoch_loss_g / tot_iter_num)
+            epoch_losses_d[epoch - 1] = (epoch_loss_d / tot_iter_num)
+            epoch_losses_g[epoch - 1] = (epoch_loss_g / tot_iter_num)
 
             # get checkpoint and save + generate samples
             checkpoint = {'gen': self.gen.state_dict(),
@@ -243,5 +247,19 @@ class TrainerPGGAN:
                     ).permute(1, 2, 0)
                     plt.imshow(out_grid.cpu())
                     plt.savefig(self.out_dir + 'size_%i_epoch_%d' % (size, epoch))
+                plt.close()
+
+                # save loss graph
+                plt.figure(figsize=(8, 6))
+                plt.title('loss')
+                plt.plot(epoch_losses_d, '-', color='red', label='D')
+                plt.plot(epoch_losses_g, '-', color='blue', label='G')
+                plt.xlabel('iteration')
+                plt.ylabel('loss')
+                plt.legend()
+                plt.tight_layout()
+                plt.savefig(self.loss_dir + 'loss')
+                plt.close()
+
 
 

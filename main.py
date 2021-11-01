@@ -119,12 +119,15 @@ if __name__ == '__main__':
     checkpoint_dir = root + 'checkpoint/'
     out_dir = root + 'output/'
     weight_dir = root + 'weight/'
+    loss_dir = root + 'loss/'
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
     if not os.path.exists(weight_dir):
         os.makedirs(weight_dir)
+    if not os.path.exists(loss_dir):
+        os.makedirs(loss_dir)
 
     # get yml config file
     with open(args.config_path) as f:

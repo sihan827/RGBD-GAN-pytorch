@@ -149,7 +149,8 @@ class PGGANGenerator(nn.Module):
         if self.rgbd and theta is None:
             assert False, "if rgbd is True, theta must not be None"
         if self.rgbd:
-            x = torch.cat([x, theta * 10], dim=1)
+            # 10을 곱하느냐 마느냐
+            x = torch.cat([x, theta], dim=1)
 
         for block in self.current_net[:self.depth - 1]:
             x = block(x)

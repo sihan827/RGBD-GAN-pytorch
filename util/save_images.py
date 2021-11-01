@@ -9,8 +9,11 @@ import torch
 def generate_sample(gen, fixed_z, test_y_rotate, angle_range=8, num_sample=4, device=torch.device("cuda")):
 
     latent_z = fixed_z[:num_sample]
-    latent_z = torch.tile(latent_z[:, None], (1, angle_range) +
-                          (1,) * (latent_z.ndim - 1)).reshape(num_sample * angle_range, *latent_z.shape[1:])
+    latent_z = torch.cat(
+        [torch.cat([latent_z[i].reshape(1, -1, 1, 1)] * angle_range, dim=0) for i in range(num_sample)],
+        dim=0
+    )
+
     theta = torch.zeros((num_sample * angle_range, 6), dtype=torch.float32).to(device)
     theta[:, 1] = torch.tile(torch.linspace(-test_y_rotate, test_y_rotate, angle_range), (num_sample, ))
     theta = torch.reshape(

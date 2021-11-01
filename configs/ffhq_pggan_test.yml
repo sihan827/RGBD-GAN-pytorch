@@ -1,22 +1,22 @@
 dataset_path: /hdd1/dataset/ffhq_thumbs # path containing dataset
 
 adam_lr_g: 0.001 # 'lr in Adam optimizer'
-adam_lr_d: 0.001 # 'lr in Adam optimizer'
+adam_lr_d: 0.003 # 'lr in Adam optimizer'
 adam_beta1: 0.0 # 'beta1 in Adam optimizer'
-adam_beta2: 0.99 # 'beta2 in Adam optimizer'
+adam_beta2: 0.999 # 'beta2 in Adam optimizer'
 lambda_gp: 1.0 #'Lambda GP'
 
 ## schedule
 ### 8, 16, 32, 64, 128
-size_starting_epochs: 5,15,25,45,55
-batchsize: 16,16,16,8,4
-growing_epochs: 5,5,5,1,1
-iteration: 60
+size_starting_epochs: 5,15,25,80,80
+batchsize: 32,32,32,16,4
+growing_epochs: 5,5,5,5,5
+iteration: 80
 
 #
 #
 ch: 256 # '#Channels'
-out_res: 128
+out_res: 32
 #
 ## architecture
 architecture: pggan # stylegan, pggan, deepvoxels
@@ -28,8 +28,8 @@ depth_min: 1.0
 lambda_geometric: 3
 
 ## starting rotation (if rgbd: True)
-start_rotation: 30
-start_occlusion_aware: 30
+start_rotation: 45
+start_occlusion_aware: 45
 
 ## camera parameter prior
 ## rotation angle range (+-radian)
