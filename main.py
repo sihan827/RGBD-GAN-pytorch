@@ -135,6 +135,7 @@ if __name__ == '__main__':
 
     # get dataset
     data_dir = config['dataset_path']
+    in_res = config['in_res']
     out_res = config['out_res']
     dataset = get_dataset(data_dir, out_res)
 
@@ -204,6 +205,7 @@ if __name__ == '__main__':
         'latent_size': ch,
         'iteration': iteration,
         'lambda_gp': lambda_gp,
+        'in_res': in_res,
         'out_res': out_res,
         'root_path': root,
         'rgbd': rgbd

@@ -150,7 +150,7 @@ class PGGANGenerator(nn.Module):
             assert False, "if rgbd is True, theta must not be None"
         if self.rgbd:
             # 10을 곱하느냐 마느냐
-            x = torch.cat([x, theta], dim=1)
+            x = torch.cat([x, theta * 10], dim=1)
 
         for block in self.current_net[:self.depth - 1]:
             x = block(x)
@@ -163,6 +163,11 @@ class PGGANGenerator(nn.Module):
             x_rgb = (1 - self.alpha) * old_rgb + self.alpha * x_rgb
 
             self.alpha += self.fade_iters
+
+        if self.rgbd:
+            depth = 1 / (F.softplus(x_rgb[:, -1:]) + 1e-4)
+            x_rgb = x_rgb[:, :3]
+            x_rgb = torch.cat([x_rgb, depth], dim=1)
 
         return x_rgb
 

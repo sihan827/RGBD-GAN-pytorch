@@ -8,15 +8,16 @@ lambda_gp: 1.0 #'Lambda GP'
 
 ## schedule
 ### 8, 16, 32, 64, 128
-size_starting_epochs: 5,15,25,80,80
+size_starting_epochs: -1,-1,-1,10,45 # if not use, set starting epochs to -1
 batchsize: 32,32,32,16,4
 growing_epochs: 5,5,5,5,5
-iteration: 80
+iteration: 20
 
 #
 #
 ch: 256 # '#Channels'
-out_res: 32
+in_res: 32 # 8, 16, 32, 64, 128
+out_res: 64 # 8, 16, 32, 64, 128 (bigger than in_res)
 #
 ## architecture
 architecture: pggan # stylegan, pggan, deepvoxels
@@ -28,8 +29,8 @@ depth_min: 1.0
 lambda_geometric: 3
 
 ## starting rotation (if rgbd: True)
-start_rotation: 45
-start_occlusion_aware: 45
+start_rotation: 5
+start_occlusion_aware: 5
 
 ## camera parameter prior
 ## rotation angle range (+-radian)

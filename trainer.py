@@ -34,6 +34,7 @@ class TrainerPGGAN:
         self.schedule = config_train['schedule']
         self.latent_size = config_train['latent_size']
         self.lambda_gp = config_train['lambda_gp']
+        self.in_res = config_train['in_res']
         self.out_res = config_train['out_res']
         self.iteration = config_train['iteration']
 
@@ -79,14 +80,19 @@ class TrainerPGGAN:
         epoch_losses_d = np.zeros(self.iteration)
         epoch_losses_g = np.zeros(self.iteration)
 
-        batch_size = self.schedule[1][0]
-        growing = self.schedule[2][0]
+        if self.in_res == 4:
+            c = 0
+        else:
+            c = int(np.log2(self.in_res) - 3)
+
+        batch_size = self.schedule[1][c]
+        growing = self.schedule[2][c]
 
         data_loader = DataLoader(dataset=self.dataset, batch_size=batch_size, shuffle=True, num_workers=8)
 
         tot_iter_num = len(self.dataset) / batch_size
-        # self.gen.fade_iters = (1 - self.gen.alpha) / self.schedule[0][1] / (2 * tot_iter_num)
-        # self.dis.fade_iters = (1 - self.dis.alpha) / self.schedule[0][1] / (2 * tot_iter_num)
+        self.gen.depth = c + 2
+        self.dis.depth = c + 2
 
         size = 2 ** (self.gen.depth + 1)
         print("Output Resolution: %d x %d" % (size, size))
