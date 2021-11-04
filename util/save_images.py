@@ -35,7 +35,7 @@ def convert_batch_images(x, rows, cols):
     depth = torch.tile(x[:, -1], (1, 3, 1, 1))
 
     x = x[:, :-1]
-    x = torch.clip(x * 255.0, 0., 255.).type(torch.uint8)
+    x = torch.clip(x * 127.5 + 127.5, 0., 255.).type(torch.uint8)
     _, _, h, w = x.shape
     x = x.reshape((rows, cols, 3, h, w))
 

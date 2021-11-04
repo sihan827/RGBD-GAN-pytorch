@@ -69,7 +69,12 @@ class TrainerPGGAN:
             self.test_z_translate = config_transform['test_z_translate']
 
         self.device = device
-        self.fixed_latent = torch.randn(16, self.latent_size, 1, 1, device=device)
+        self.fixed_latent = self.make_hidden(16)
+
+    def make_hidden(self, batch_size):
+        z = torch.normal(0, 1, size=(batch_size, self.latent_size, 1, 1))
+        z /= torch.sqrt(torch.sum(z * z, dim=1, keepdims=True) / self.latent_size + 1e-8)
+        return z.to(self.device)
 
     def train(self):
         # initial definition
@@ -143,11 +148,11 @@ class TrainerPGGAN:
                 self.optim_d.zero_grad()
                 if self.rgbd:
                     latent_z = torch.cat(
-                        [torch.randn(samples.size(0) // 2, self.latent_size, 1, 1, device=self.device)] * 2,
+                        [self.make_hidden(samples.size(0) // 2)] * 2,
                         dim=0
                     )
                 else:
-                    latent_z = torch.randn(samples.size(0), self.latent_size, 1, 1, device=self.device)
+                    latent_z = self.make_hidden(samples.size(0))
 
                 x_fake = self.gen(latent_z, theta=thetas)
                 y_fake = self.dis(x_fake[:, :3].detach())
@@ -191,7 +196,7 @@ class TrainerPGGAN:
                         loss_rotate += torch.mean(F.relu(self.depth_min - x_fake[:, -1]) ** 2) * self.lambda_depth
 
                     assert not torch.isnan(loss_rotate.data)
-                    lambda_rotate = 2 if size <= self.out_res else 4
+                    lambda_rotate = 4 if size <= self.out_res else 4
                     loss_rotate = loss_rotate * lambda_rotate
 
                 # backpropagate G loss

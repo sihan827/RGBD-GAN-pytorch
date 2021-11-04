@@ -4,14 +4,14 @@ adam_lr_g: 0.001 # 'lr in Adam optimizer'
 adam_lr_d: 0.003 # 'lr in Adam optimizer'
 adam_beta1: 0.0 # 'beta1 in Adam optimizer'
 adam_beta2: 0.999 # 'beta2 in Adam optimizer'
-lambda_gp: 1.0 #'Lambda GP'
+lambda_gp: 1. #'Lambda GP'
 
 ## schedule
 ### 8, 16, 32, 64, 128
-size_starting_epochs: -1,-1,-1,10,45 # if not use, set starting epochs to -1
+size_starting_epochs: -1,-1,-1,100,200 # if not use, set starting epochs to -1
 batchsize: 32,32,32,16,4
 growing_epochs: 5,5,5,5,5
-iteration: 20
+iteration: 120
 
 #
 #
@@ -29,8 +29,8 @@ depth_min: 1.0
 lambda_geometric: 3
 
 ## starting rotation (if rgbd: True)
-start_rotation: 5
-start_occlusion_aware: 5
+start_rotation: 8
+start_occlusion_aware: 8
 
 ## camera parameter prior
 ## rotation angle range (+-radian)
@@ -50,20 +50,6 @@ test_x_translate: 0
 test_y_translate: 0
 test_z_translate: 0
 
-## hps (device)
-enable_cuda_profiling: False # 'Whether to enable CUDA profiling.'
-#
-#
-## hps (I/O)
-out: '/nas/users/sangil/projects/rgbdgan_pytorch' # 'Directory to output the result'
-auto_resume_dir: '' # 'Directory for loading the saved models'
-
-#
-snapshot_interval: 10000 # 'Interval of snapshot'
-evaluation_sample_interval: 500 # 'Interval of evaluation sampling'
-display_interval: 100 # 'Interval of displaying log to console'
-get_model_from_interation: '' # 'Load this iteration (it is a string)'
-#
 ## Style GAN
 style_mixing_rate: 0.0 # ' Style Mixing Prob'
 enable_blur: False # 'Enable blur function after upscaling/downscaling'

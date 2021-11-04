@@ -71,7 +71,8 @@ def get_dataset(path, out_res):
         transforms.Resize(out_res),
         transforms.CenterCrop(out_res),
         transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+        transforms.Lambda(lambda x: x * 2. - 1.)
     ])
 
     return ImageFolder(path, transform=transform)
