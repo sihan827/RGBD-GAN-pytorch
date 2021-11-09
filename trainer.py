@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+import os
 
 from tqdm import tqdm
 from torch.utils.data import DataLoader
@@ -49,6 +50,13 @@ class TrainerPGGAN:
         self.checkpoint_dir = config['root_path'] + 'checkpoint/'
         self.out_dir = config['root_path'] + 'output/'
         self.weight_dir = config['root_path'] + 'weight/'
+
+        if not os.path.exists(self.out_dir):
+            os.makedirs(self.out_dir)
+        if not os.path.exists(self.loss_dir):
+            os.makedirs(self.loss_dir)
+        if not os.path.exists(self.checkpoint_dir):
+            os.makedirs(self.checkpoint_dir)
 
         self.device = device
 

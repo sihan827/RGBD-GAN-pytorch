@@ -115,6 +115,8 @@ if __name__ == '__main__':
 
     # make directory (if not exists)
     root = args.root
+    
+    """
     checkpoint_dir = root + 'checkpoint/'
     out_dir = root + 'output/'
     weight_dir = root + 'weight/'
@@ -124,6 +126,7 @@ if __name__ == '__main__':
         os.makedirs(out_dir)
     if not os.path.exists(weight_dir):
         os.makedirs(weight_dir)
+    """
 
     # get yml config file
     with open(args.config_path) as f:
