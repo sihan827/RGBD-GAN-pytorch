@@ -115,7 +115,6 @@ if __name__ == '__main__':
 
     # make directory (if not exists)
     root = args.root
-    
     """
     checkpoint_dir = root + 'checkpoint/'
     out_dir = root + 'output/'

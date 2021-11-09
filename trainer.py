@@ -50,7 +50,8 @@ class TrainerPGGAN:
         self.checkpoint_dir = config['root_path'] + 'checkpoint/'
         self.out_dir = config['root_path'] + 'output/'
         self.weight_dir = config['root_path'] + 'weight/'
-
+        
+        # make directory (if not exists)
         if not os.path.exists(self.out_dir):
             os.makedirs(self.out_dir)
         if not os.path.exists(self.loss_dir):
