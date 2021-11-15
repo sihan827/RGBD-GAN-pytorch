@@ -13,9 +13,9 @@ from torch.utils.data import DataLoader
 from torchvision.utils import make_grid, save_image
 
 from util.components import *
-from util.loss import loss_gen_bce, loss_dis_bce, Rotate3dLoss
+from util.loss import loss_dis_dcgan_soft, loss_gen_dcgan_soft, loss_gen_bce, loss_dis_bce, Rotate3dLoss
 from util.camera_param import CameraParam
-from util.save_images import generate_sample
+from util.save_results import generate_sample_rgbd, convert_batch_images_rgbd, save_batch_sample_rgbd, save_loss_graph
 
 
 class TrainerPGGAN:
@@ -140,8 +140,11 @@ class TrainerPGGAN:
                     thetas = self.camera_param.get_sample_param(samples.size(0))
                     random_camera_matrix = self.camera_param.get_ex_matrices(thetas)
                     thetas = torch.reshape(
-                        torch.cat([torch.cos(thetas[:, :3]), torch.sin(thetas[:, :3]), thetas[:, 3:]], dim=1),
-                        (samples.size(0), 9, 1, 1)
+                        # rigid transform parameters 전부 사용 (9) vs 오직 x,y rotation만 사용 (4)
+                        # torch.cat([torch.cos(thetas[:, :3]), torch.sin(thetas[:, :3]), thetas[:, 3:]], dim=1),
+                        torch.cat([torch.cos(thetas[:, :2]), torch.sin(thetas[:, :2])], dim=1),
+                        # (samples.size(0), 9, 1, 1)
+                        (samples.size(0), 4, 1, 1)
                     )
 
                 # update D
@@ -172,6 +175,7 @@ class TrainerPGGAN:
                 # bce loss function vs. D의 출력을 바로 사용
                 loss_d = loss_dis_bce(y_fake, y_real) + gradient_penalty
                 # loss_d = y_fake.mean() - y_real.mean() + gradient_penalty
+                # loss_d = loss_dis_dcgan_soft(y_fake, y_real) + gradient_penalty
                 assert not torch.isnan(loss_d.data)
                 loss_d.backward()
                 self.optim_d.step()
@@ -196,14 +200,15 @@ class TrainerPGGAN:
                         loss_rotate += torch.mean(F.relu(self.depth_min - x_fake[:, -1]) ** 2) * self.lambda_depth
 
                     assert not torch.isnan(loss_rotate.data)
-                    lambda_rotate = 4 if size <= self.out_res else 4
+                    lambda_rotate = 2 if size <= self.out_res else 4
                     loss_rotate = loss_rotate * lambda_rotate
 
                 # backpropagate G loss
                 # bce loss function vs. D의 출력을 바로 사용
-                loss_g = loss_gen_bce(y_fake) + loss_rotate
-                assert not torch.isnan(loss_g.data)
                 # loss_g = -y_fake.mean()
+                loss_g = loss_gen_bce(y_fake) + loss_rotate
+                # loss_g = loss_gen_dcgan_soft(y_fake) + loss_rotate
+                assert not torch.isnan(loss_g.data)
                 loss_g.backward()
                 self.optim_g.step()
 
@@ -240,37 +245,36 @@ class TrainerPGGAN:
                            'depth': self.gen.depth,
                            'alpha': self.gen.alpha
                            }
+            gen_parameters = {
+                'gen': self.gen.state_dict(),
+                'depth': self.gen.depth,
+                'alpha': self.gen.alpha,
+                'out_res': self.out_res
+            }
 
             with torch.no_grad():
-                # depth 추가 시 이 쪽을 수정하여 출력 grid에 rgb와 depth가 붙어있도록 수정해야함.
                 self.gen.eval()
                 if epoch == self.iteration:
                     torch.save(checkpoint, self.checkpoint_dir + 'checkpoint_epoch_%d.pth' % epoch)
-                    torch.save(self.gen.state_dict(), self.weight_dir + 'gen_weight_epoch_%d.pth' % epoch)
+                    torch.save(gen_parameters, self.weight_dir + 'gen_weight_epoch_%d.pth' % epoch)
                 if self.rgbd:
-                    sample_x = generate_sample(self.gen, self.fixed_latent, self.test_y_rotate, device=self.device)
-                    plt.imshow(sample_x.cpu())
-                    plt.savefig(self.out_dir + 'size_%i_epoch_%d' % (size, epoch))
+                    angle_range = 8
+                    sample_x = generate_sample_rgbd(
+                        self.gen, self.fixed_latent, self.test_y_rotate, angle_range=angle_range, device=self.device)
+                    x, depth = convert_batch_images_rgbd(sample_x, angle_range)
+                    save_batch_sample_rgbd(x, path=self.out_dir + 'size_%i_epoch_%d' % (size, epoch), depth=depth)
                 else:
+                    plt.figure()
                     out_imgs = self.gen(self.fixed_latent)
                     out_grid = make_grid(
                         out_imgs, normalize=True, nrow=4, scale_each=True, padding=int(0.5*(2**self.gen.depth))
                     ).permute(1, 2, 0)
                     plt.imshow(out_grid.cpu())
                     plt.savefig(self.out_dir + 'size_%i_epoch_%d' % (size, epoch))
-                plt.close()
+                    plt.close()
 
                 # save loss graph
-                plt.figure(figsize=(8, 6))
-                plt.title('loss')
-                plt.plot(epoch_losses_d, '-', color='red', label='D')
-                plt.plot(epoch_losses_g, '-', color='blue', label='G')
-                plt.xlabel('iteration')
-                plt.ylabel('loss')
-                plt.legend()
-                plt.tight_layout()
-                plt.savefig(self.loss_dir + 'loss')
-                plt.close()
+                save_loss_graph(epoch_losses_d, epoch_losses_g, path=self.loss_dir + 'loss')
 
 
 

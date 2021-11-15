@@ -31,9 +31,9 @@ class ToRGB(nn.Module):
     """
     ToRGB block behind of G
     """
-    def __init__(self, in_ch, out_ch, rgbd=False):
+    def __init__(self, in_ch, out_ch, rgbd=False, gain=2):
         super(ToRGB, self).__init__()
-        self.conv = EqualizedLRConv2d(in_ch, out_ch, kernel_size=(1, 1), stride=(1, 1))
+        self.conv = EqualizedLRConv2d(in_ch, out_ch, kernel_size=(1, 1), stride=(1, 1), gain=gain)
 
         if rgbd:
             nn.init.constant_(self.conv.w[-1], 0)
@@ -53,7 +53,8 @@ class GeneratorBlock(nn.Module):
             self.upsample = None
             if rgbd:
                 # add conditional channel to latent z
-                self.conv1 = EqualizedLRConv2d(in_ch + 9, out_ch, kernel_size=(4, 4), stride=(1, 1), padding=(3, 3))
+                # rigid transform parameters 전부 사용 (9) vs 오직 x,y rotation만 사용 (4)
+                self.conv1 = EqualizedLRConv2d(in_ch + 4, out_ch, kernel_size=(4, 4), stride=(1, 1), padding=(3, 3))
             else:
                 self.conv1 = EqualizedLRConv2d(in_ch, out_ch, kernel_size=(4, 4), stride=(1, 1), padding=(3, 3))
         else:
@@ -62,22 +63,24 @@ class GeneratorBlock(nn.Module):
 
         self.conv2 = EqualizedLRConv2d(out_ch, out_ch, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
         self.relu = nn.LeakyReLU(0.2)
-        self.pixelnorm = PixelwiseNorm()
+        # self.pixelnorm = PixelwiseNorm()
 
-        nn.init.normal_(self.conv1.w)
-        nn.init.normal_(self.conv2.w)
-        nn.init.zeros_(self.conv1.b)
-        nn.init.zeros_(self.conv2.b)
+        # nn.init.normal_(self.conv1.w)
+        # nn.init.normal_(self.conv2.w)
+        # nn.init.zeros_(self.conv1.b)
+        # nn.init.zeros_(self.conv2.b)
 
     def forward(self, x):
         if self.upsample is not None:
             x = self.upsample(x)
         x = self.conv1(x)
         x = self.relu(x)
-        x = self.pixelnorm(x)
+        x = F.normalize(x)
+        # x = self.pixelnorm(x)
         x = self.conv2(x)
         x = self.relu(x)
-        x = self.pixelnorm(x)
+        x = F.normalize(x)
+        # x = self.pixelnorm(x)
         return x
 
 
@@ -88,8 +91,9 @@ class DiscriminatorBlock(nn.Module):
     def __init__(self, in_ch, out_ch, base=False):
         super(DiscriminatorBlock, self).__init__()
         if base:
-            self.minibatchstd = MinibatchStd()
-            self.conv1 = EqualizedLRConv2d(in_ch + 1, out_ch, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+            # self.minibatchstd = MinibatchStd()
+            # minibatchstd 사용시 conv1 in_ch에 1 더하기
+            self.conv1 = EqualizedLRConv2d(in_ch, out_ch, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
             self.conv2 = EqualizedLRConv2d(out_ch, out_ch, kernel_size=(4, 4), stride=(1, 1))
             self.outlayer = nn.Sequential(
                 nn.Flatten(),
@@ -102,14 +106,14 @@ class DiscriminatorBlock(nn.Module):
             self.outlayer = nn.AvgPool2d(kernel_size=(2, 2), stride=(2, 2))
 
         self.relu = nn.LeakyReLU(0.2)
-        nn.init.normal_(self.conv1.w)
-        nn.init.normal_(self.conv2.w)
-        nn.init.zeros_(self.conv1.b)
-        nn.init.zeros_(self.conv2.b)
+        # nn.init.normal_(self.conv1.w)
+        # nn.init.normal_(self.conv2.w)
+        # nn.init.zeros_(self.conv1.b)
+        # nn.init.zeros_(self.conv2.b)
 
     def forward(self, x):
-        if self.minibatchstd is not None:
-            x = self.minibatchstd(x)
+        # if self.minibatchstd is not None:
+        #     x = self.minibatchstd(x)
         x = self.conv1(x)
         x = self.relu(x)
         x = self.conv2(x)
@@ -131,7 +135,7 @@ class PGGANGenerator(nn.Module):
         self.current_net = nn.ModuleList([GeneratorBlock(latent_size, ch, rgbd=rgbd, base=True)])  # 4x4
         self.rgbd = rgbd
         img_ch = 4 if rgbd else 3
-        self.toRGBs = nn.ModuleList([ToRGB(latent_size, img_ch, rgbd=rgbd)])
+        self.toRGBs = nn.ModuleList([ToRGB(latent_size, img_ch, rgbd=rgbd, gain=1)])
 
         for d in range(2, int(np.log2(out_res))):
             if d < 5:
@@ -142,7 +146,7 @@ class PGGANGenerator(nn.Module):
                 in_ch, out_ch = int(ch / 2 ** (d - 5)), int(ch / 2 ** (d - 4))
 
             self.current_net.append(GeneratorBlock(in_ch, out_ch))
-            self.toRGBs.append(ToRGB(out_ch, img_ch, rgbd=rgbd))
+            self.toRGBs.append(ToRGB(out_ch, img_ch, rgbd=rgbd, gain=1))
 
     def forward(self, x, theta=None):
         # prepare latent vector with theta condition if rgbd is True

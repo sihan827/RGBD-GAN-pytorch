@@ -1,7 +1,7 @@
 dataset_path: /hdd1/dataset/ffhq_thumbs # path containing dataset
 
-adam_lr_g: 0.001 # 'lr in Adam optimizer'
-adam_lr_d: 0.003 # 'lr in Adam optimizer'
+adam_lr_g: 0.0001 # 'lr in Adam optimizer'
+adam_lr_d: 0.0003 # 'lr in Adam optimizer'
 adam_beta1: 0.0 # 'beta1 in Adam optimizer'
 adam_beta2: 0.999 # 'beta2 in Adam optimizer'
 lambda_gp: 1. #'Lambda GP'
@@ -11,7 +11,7 @@ lambda_gp: 1. #'Lambda GP'
 size_starting_epochs: -1,-1,-1,100,200 # if not use, set starting epochs to -1
 batchsize: 32,32,32,16,4
 growing_epochs: 5,5,5,5,5
-iteration: 120
+iteration: 150
 
 #
 #
@@ -29,8 +29,8 @@ depth_min: 1.0
 lambda_geometric: 3
 
 ## starting rotation (if rgbd: True)
-start_rotation: 8
-start_occlusion_aware: 8
+start_rotation: 2
+start_occlusion_aware: 2
 
 ## camera parameter prior
 ## rotation angle range (+-radian)
@@ -44,7 +44,7 @@ z_translate: 0
 
 # test angles
 test_x_rotate: 0
-test_y_rotate: 0.7854
+test_y_rotate: 0.9
 test_z_rotate: 0
 test_x_translate: 0
 test_y_translate: 0

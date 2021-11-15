@@ -19,6 +19,10 @@ def loss_gen_bce(y_fake):
     return loss
 
 
+def loss_gen_dcgan_soft(y_fake):
+    return torch.mean(F.softplus(-y_fake))
+
+
 def loss_dis_bce(y_fake, y_real):
     """
     loss function with BCE on D
@@ -29,6 +33,10 @@ def loss_dis_bce(y_fake, y_real):
     real_loss = F.binary_cross_entropy_with_logits(y_real, label_real)
 
     return (fake_loss + real_loss) / 2
+
+
+def loss_dis_dcgan_soft(y_fake, y_real):
+    return (torch.mean(F.softplus(y_fake)) + torch.mean(F.softplus(-y_real))) / 2
 
 
 class Rotate3dLoss:

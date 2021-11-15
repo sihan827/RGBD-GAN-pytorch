@@ -15,7 +15,7 @@ from torch.utils import data
 from torchvision.datasets import ImageFolder
 from torchvision.transforms import transforms
 
-from util.save_images import convert_batch_images
+from util.save_results import convert_batch_images
 from util.pggan import make_hidden
 from networks import PGGANGenerator, PGGANDiscriminator
 from trainer import TrainerPGGAN
@@ -71,7 +71,7 @@ def get_dataset(path, out_res):
         transforms.Resize(out_res),
         transforms.CenterCrop(out_res),
         transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+        # transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
         transforms.Lambda(lambda x: x * 2. - 1.)
     ])
 
