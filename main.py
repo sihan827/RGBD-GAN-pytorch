@@ -15,52 +15,9 @@ from torch.utils import data
 from torchvision.datasets import ImageFolder
 from torchvision.transforms import transforms
 
-from util.save_results import convert_batch_images
 from util.pggan import make_hidden
 from networks import PGGANGenerator, PGGANDiscriminator
 from trainer import TrainerPGGAN
-
-
-def sample_generate(gen, dst, stage, config, rows=8, cols=8, z=None, seed=0, subdir='preview'):
-    """
-    generate samples from generator and save
-    """
-    #device = torch.device('cuda:' + str(config['gpu']))
-    device = torch.device('cuda')
-    torch.random.manual_seed(seed)
-    n_images = cols
-    if z is None:
-        if config['rgb']:
-            z = make_hidden(config['ch'], rows * cols, device)
-        else:
-            z = make_hidden(config['ch'], n_images, device)
-            z = torch.tile(z[:, None], (1, rows) + (1,) * (z.ndim - 1)).reshape(rows * cols, *z.shape[1:])
-    else:
-        z = z[:n_images * rows]
-        # 텐서에 디바이스 설정부터 시작
-    if config['rgb']:
-        theta = None
-    else:
-        theta = torch.zeros((rows * cols, 6), dtype=torch.float32).to(device)
-        theta[:, 1] = torch.tile(torch.linspace(-config['test_y_rotate'], config['test_y_rotate'], rows), (cols,))
-
-        from update import get_camera_matrices
-        random_camera_matrices = get_camera_matrices(theta)
-        theta = torch.cat([torch.cos(theta[:, :3]), torch.sin(theta[:, :3]), theta[:, 3:]], dim=1)
-
-    gen.eval()
-    with torch.no_grad():
-        x = gen(z, stage=stage, theta=theta)
-
-    torch.random.seed()
-    x = convert_batch_images(x, rows, cols)
-
-    preview_dir = '{}/{}'.format(dst, subdir)
-    if not os.path.exists(preview_dir):
-        os.makedirs(preview_dir)
-
-    preview_path = preview_dir + '/image_latest.png'
-    Image.fromarray(x).save(preview_path)
 
 
 def get_dataset(path, out_res):
@@ -185,7 +142,7 @@ if __name__ == '__main__':
 
     # select GAN model
     if config['architecture'] == 'pggan':
-        dis = PGGANDiscriminator(ch, out_res, ch=ch).to(device)
+        dis = PGGANDiscriminator(ch, out_res, res=config['res_dis'], ch=ch).to(device)
         gen = PGGANGenerator(ch, out_res, ch=ch, rgbd=rgbd).to(device)
     else:
         dis = None

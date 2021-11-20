@@ -88,8 +88,9 @@ class DiscriminatorBlock(nn.Module):
     """
     discriminator block for PGGAN
     """
-    def __init__(self, in_ch, out_ch, base=False):
+    def __init__(self, in_ch, out_ch, res=False, base=False):
         super(DiscriminatorBlock, self).__init__()
+        self.res = res
         if base:
             # self.minibatchstd = MinibatchStd()
             # minibatchstd 사용시 conv1 in_ch에 1 더하기
@@ -100,9 +101,11 @@ class DiscriminatorBlock(nn.Module):
                 nn.Linear(out_ch, 1)
             )
         else:
-            self.minibatchstd = None
+            # self.minibatchstd = None
             self.conv1 = EqualizedLRConv2d(in_ch, out_ch, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
             self.conv2 = EqualizedLRConv2d(out_ch, out_ch, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+            if res:
+                self.conv_shortcut = EqualizedLRConv2d(in_ch, out_ch, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
             self.outlayer = nn.AvgPool2d(kernel_size=(2, 2), stride=(2, 2))
 
         self.relu = nn.LeakyReLU(0.2)
@@ -114,9 +117,12 @@ class DiscriminatorBlock(nn.Module):
     def forward(self, x):
         # if self.minibatchstd is not None:
         #     x = self.minibatchstd(x)
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = self.conv2(x)
+        h = self.relu(self.conv1(x))
+        if self.res:
+            shortcut = self.conv_shortcut(x)
+            x = self.conv2(h) + shortcut
+        else:
+            x = self.conv2(h)
         x = self.relu(x)
         x = self.outlayer(x)
         return x
@@ -186,7 +192,7 @@ class PGGANDiscriminator(nn.Module):
     """
     discriminator architecture for PGGAN
     """
-    def __init__(self, latent_size, out_res, ch=512):
+    def __init__(self, latent_size, out_res, res=False, ch=512):
         super(PGGANDiscriminator, self).__init__()
         self.depth = 1
         self.alpha = 1
@@ -204,7 +210,7 @@ class PGGANDiscriminator(nn.Module):
             else:
                 # 64x64, 128x128
                 in_ch, out_ch = int(ch / 2 ** (d - 4)), int(ch / 2 ** (d - 5))
-            self.current_net.append(DiscriminatorBlock(in_ch, out_ch))
+            self.current_net.append(DiscriminatorBlock(in_ch, out_ch, res=res))
             self.fromRGBs.append(FromRGB(3, in_ch))
 
     def forward(self, x_rgb):

@@ -8,21 +8,22 @@ lambda_gp: 1. #'Lambda GP'
 
 ## schedule
 ### 8, 16, 32, 64, 128
-size_starting_epochs: -1,-1,-1,100,200 # if not use, set starting epochs to -1
+size_starting_epochs: -1,-1,-1,100,125 # if not use, set starting epochs to -1
 batchsize: 32,32,32,16,4
 growing_epochs: 5,5,5,5,5
-iteration: 150
+iteration: 140
 
 #
 #
 ch: 256 # '#Channels'
 in_res: 32 # 8, 16, 32, 64, 128
-out_res: 64 # 8, 16, 32, 64, 128 (bigger than in_res)
+out_res: 128 # 8, 16, 32, 64, 128 (bigger than in_res)
 #
 ## architecture
 architecture: pggan # stylegan, pggan, deepvoxels
-rgbd: True # rgb or rgbd
+res_dis: False
 use_cuda: True
+rgbd: True # rgb or rgbd
 # rotate_conv_input: False
 lambda_depth: 10
 depth_min: 1.0
@@ -44,7 +45,7 @@ z_translate: 0
 
 # test angles
 test_x_rotate: 0
-test_y_rotate: 0.9
+test_y_rotate: 1.0472
 test_z_rotate: 0
 test_x_translate: 0
 test_y_translate: 0

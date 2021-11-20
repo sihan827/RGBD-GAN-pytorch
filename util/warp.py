@@ -72,3 +72,4 @@ def bilinear_sampling(img, dp):
 
     return warped, not_out
 
+
