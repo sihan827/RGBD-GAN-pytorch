@@ -15,7 +15,7 @@ def loss_gen_bce(y_fake):
     loss function with BCE on G
     """
     label_real = torch.ones_like(y_fake)
-    loss = F.binary_cross_entropy_with_logits(y_fake, label_real)
+    loss = F.binary_cross_entropy_with_logits(y_fake, label_real, reduction='none')
     return loss
 
 
@@ -29,10 +29,10 @@ def loss_dis_bce(y_fake, y_real):
     """
     label_fake = torch.zeros_like(y_fake)
     label_real = torch.ones_like(y_real)
-    fake_loss = F.binary_cross_entropy_with_logits(y_fake, label_fake)
+    fake_loss = F.binary_cross_entropy_with_logits(y_fake, label_fake, reduction='none')
     real_loss = F.binary_cross_entropy_with_logits(y_real, label_real)
 
-    return (fake_loss + real_loss) / 2
+    return (torch.mean(fake_loss) + real_loss) / 2, real_loss, fake_loss
 
 
 def loss_dis_dcgan_soft(y_fake, y_real):

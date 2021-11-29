@@ -35,36 +35,6 @@ def get_dataset(path, out_res):
     return ImageFolder(path, transform=transform)
 
 
-class CameraParamPrior:
-    """
-    prepare camera parameters for training from uniform distribution
-    """
-    def __init__(self, config):
-        #self.device = torch.device('cuda:' + str(config['gpu']))
-        self.device = torch.device('cuda')
-        self.rotation_range = torch.tensor([
-            config['x_rotate'], config['y_rotate'], config['z_rotate']]
-        ).to(self.device)
-        self.camera_param_range = torch.tensor([
-            config['x_rotate'], config['y_rotate'], config['z_rotate'],
-            config['x_translate'], config['y_translate'], config['z_translate']
-        ]).to(self.device)
-
-    def sample(self, batch_size):
-        thetas = torch.FloatTensor(batch_size // 2, 6).uniform_(-1, 1).to(self.device)
-        eps = torch.FloatTensor(batch_size // 2, 6).uniform_(0, 0.5).to(self.device)
-        sign = torch.tensor(np.random.choice(2, size=(batch_size // 2, 3)) * 2 - 1).to(self.device)
-
-        eps[:, :3] = eps[:, :3] * (sign * (self.rotation_range == 3.1415) +
-                                          torch.abs(sign) * (self.rotation_range != 3.1415)) * \
-                     torch.clip(1 / (self.rotation_range + 1e-8), 0, 1)
-        thetas2 = -eps * torch.sign(thetas) + thetas
-        thetas = torch.cat([thetas, thetas2], dim=0)
-
-        thetas = thetas * self.camera_param_range[None]
-        return thetas
-
-
 if __name__ == '__main__':
     # parse arguments
     parser = argparse.ArgumentParser()
@@ -113,6 +83,9 @@ if __name__ == '__main__':
     adam_beta1 = config['adam_beta1']
     adam_beta2 = config['adam_beta2']
     lambda_gp = config['lambda_gp']
+
+    # OSGAN config
+    osgan = config['osgan']
 
     # rgbd, transform configs
     rgbd = config['rgbd']
@@ -166,6 +139,7 @@ if __name__ == '__main__':
         'in_res': in_res,
         'out_res': out_res,
         'root_path': root,
+        'osgan': osgan,
         'rgbd': rgbd
     }
 

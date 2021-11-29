@@ -111,11 +111,13 @@ def save_batch_sample_rgbd(image, path, depth=None):
     plt.close()
 
 
-def save_loss_graph(epoch_losses_d, epoch_losses_g, path):
+def save_loss_graph(epoch_losses_d, epoch_losses_g, path, p=None):
     plt.figure(figsize=(8, 6))
     plt.title('loss')
     plt.plot(epoch_losses_d, '-', color='red', label='D')
     plt.plot(epoch_losses_g, '-', color='blue', label='G')
+    if p is not None:
+        plt.plot(p, '-', color='green', label='P')
     plt.xlabel('iteration')
     plt.ylabel('loss')
     plt.legend()

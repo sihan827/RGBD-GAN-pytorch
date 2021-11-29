@@ -13,9 +13,10 @@ from torch.utils.data import DataLoader
 from torchvision.utils import make_grid, save_image
 
 from util.components import *
-from util.loss import loss_dis_dcgan_soft, loss_gen_dcgan_soft, loss_gen_bce, loss_dis_bce, Rotate3dLoss
+from util.loss import loss_gen_bce, loss_dis_bce, Rotate3dLoss
 from util.camera_param import CameraParam
 from util.save_results import generate_sample_rgbd, convert_batch_images_rgbd, save_batch_sample_rgbd, save_loss_graph
+from util.osgan_module import get_gradient_ratios, GradientScaler
 
 
 class TrainerPGGAN:
@@ -42,6 +43,8 @@ class TrainerPGGAN:
         self.out_dir = config_train['root_path'] + 'output/'
         self.weight_dir = config_train['root_path'] + 'weight/'
         self.loss_dir = config_train['root_path'] + 'loss/'
+
+        self.osgan = config_train['osgan']
 
         self.rgbd = config_train['rgbd']
 
@@ -79,16 +82,22 @@ class TrainerPGGAN:
     def train(self):
         # initial definition
         running_loss_d = 0.
-        running_loss_g = 0.
-        iter_num = 0
-
         epoch_losses_d = np.zeros(self.iteration)
+        running_loss_g = 0.
         epoch_losses_g = np.zeros(self.iteration)
+        if self.osgan:
+            running_loss_p = 0.
+            epoch_losses_p = np.zeros(self.iteration)
+        iter_num = 0
 
         if self.in_res == 4:
             c = 0
+            self.gen.depth = 1
+            self.dis.depth = 1
         else:
             c = int(np.log2(self.in_res) - 3)
+            self.gen.depth = c + 2
+            self.dis.depth = c + 2
 
         batch_size = self.schedule[1][c]
         growing = self.schedule[2][c]
@@ -96,21 +105,26 @@ class TrainerPGGAN:
         data_loader = DataLoader(dataset=self.dataset, batch_size=batch_size, shuffle=True, num_workers=8)
 
         tot_iter_num = len(self.dataset) / batch_size
-        self.gen.depth = c + 2
-        self.dis.depth = c + 2
 
         size = 2 ** (self.gen.depth + 1)
         print("Output Resolution: %d x %d" % (size, size))
 
         for epoch in range(1, self.iteration + 1):
             use_rotate = False
+            if self.osgan:
+                scaler = GradientScaler.apply
+
             if self.rgbd:
                 if epoch >= self.start_rotation:
                     use_rotate = True
 
             self.gen.train()
+
             epoch_loss_d = 0.
             epoch_loss_g = 0.
+            if self.osgan:
+                epoch_loss_p = 0.
+
             if epoch - 1 in self.schedule[0]:
                 if 2 ** (self.gen.depth + 1) < self.out_res:
                     c = self.schedule[0].index(epoch - 1)
@@ -146,71 +160,138 @@ class TrainerPGGAN:
                         # (samples.size(0), 9, 1, 1)
                         (samples.size(0), 4, 1, 1)
                     )
+                if not self.osgan:
+                    # update D
+                    self.optim_d.zero_grad()
+                    if self.rgbd:
+                        latent_z = torch.cat(
+                            [self.make_hidden(samples.size(0) // 2)] * 2,
+                            dim=0
+                        )
+                    else:
+                        latent_z = self.make_hidden(samples.size(0))
 
-                # update D
-                self.optim_d.zero_grad()
-                if self.rgbd:
-                    latent_z = torch.cat(
-                        [self.make_hidden(samples.size(0) // 2)] * 2,
-                        dim=0
-                    )
+                    x_fake = self.gen(latent_z, theta=thetas)
+                    y_fake = self.dis(x_fake[:, :3].detach())
+                    y_real = self.dis(samples)
+
+                    # gradient penalty
+                    eps = torch.rand(samples.size(0), 1, 1, 1, device=self.device)
+                    eps = eps.expand_as(samples)
+                    x_hat = eps * samples + (1 - eps) * x_fake[:, :3].detach()
+                    x_hat.requires_grad = True
+                    px_hat = self.dis(x_hat)
+                    grad = torch.autograd.grad(outputs=px_hat.sum(), inputs=x_hat, create_graph=True)[0]
+                    grad_norm = grad.view(samples.size(0), -1).norm(2, dim=1)
+                    gradient_penalty = self.lambda_gp * ((grad_norm - 1) ** 2).mean()
+
+                    # backpropagate D loss
+                    loss_d, _, _ = loss_dis_bce(y_fake, y_real)
+                    loss_d += gradient_penalty
+                    assert not torch.isnan(loss_d.data)
+                    loss_d.backward()
+                    self.optim_d.step()
+
+                    # update G
+                    self.optim_g.zero_grad()
+                    y_fake = self.dis(x_fake[:, :3])
+
+                    loss_rotate = 0.
+                    if use_rotate:
+                        # 3d loss
+                        loss_rotate, warped_dp = self.rotate_3d_loss(
+                            x_fake[:samples.size(0) // 2],
+                            random_camera_matrix[:samples.size(0) // 2],
+                            x_fake[samples.size(0) // 2:],
+                            random_camera_matrix[samples.size(0) // 2:],
+                            epoch >= self.start_occlusion_aware
+                        )
+
+                        if self.lambda_depth > 0:
+                            # depth regularization
+                            loss_rotate += torch.mean(F.relu(self.depth_min - x_fake[:, -1]) ** 2) * self.lambda_depth
+
+                        assert not torch.isnan(loss_rotate.data)
+                        lambda_rotate = 2 if size <= self.out_res else 4
+                        loss_rotate = loss_rotate * lambda_rotate
+
+                    # backpropagate G loss
+                    loss_g = torch.mean(loss_gen_bce(y_fake)) + loss_rotate
+                    assert not torch.isnan(loss_g.data)
+                    loss_g.backward()
+                    self.optim_g.step()
                 else:
-                    latent_z = self.make_hidden(samples.size(0))
+                    if self.rgbd:
+                        latent_z = torch.cat(
+                            [self.make_hidden(samples.size(0) // 2)] * 2,
+                            dim=0
+                        )
+                    else:
+                        latent_z = self.make_hidden(samples.size(0))
 
-                x_fake = self.gen(latent_z, theta=thetas)
-                y_fake = self.dis(x_fake[:, :3].detach())
-                y_real = self.dis(samples)
+                    x_fake = self.gen(latent_z, theta=thetas)
+                    x_fake_neg = scaler(x_fake)
+                    y_fake = self.dis(x_fake_neg[:, :3])
+                    y_real = self.dis(samples)
 
-                # gradient penalty
-                eps = torch.rand(samples.size(0), 1, 1, 1, device=self.device)
-                eps = eps.expand_as(samples)
-                x_hat = eps * samples + (1 - eps) * x_fake[:, :3].detach()
-                x_hat.requires_grad = True
-                px_hat = self.dis(x_hat)
-                grad = torch.autograd.grad(outputs=px_hat.sum(), inputs=x_hat, create_graph=True)[0]
-                grad_norm = grad.view(samples.size(0), -1).norm(2, dim=1)
-                gradient_penalty = self.lambda_gp * ((grad_norm - 1) ** 2).mean()
+                    # gradient penalty
+                    eps = torch.rand(samples.size(0), 1, 1, 1, device=self.device)
+                    eps = eps.expand_as(samples)
+                    x_hat = eps * samples + (1 - eps) * x_fake[:, :3].detach()
+                    x_hat.requires_grad = True
+                    px_hat = self.dis(x_hat)
+                    grad = torch.autograd.grad(outputs=px_hat.sum(), inputs=x_hat, create_graph=True)[0]
+                    grad_norm = grad.view(samples.size(0), -1).norm(2, dim=1)
+                    gradient_penalty = self.lambda_gp * ((grad_norm - 1) ** 2).mean()
 
-                # backpropagate D loss
-                # bce loss function vs. D의 출력을 바로 사용
-                loss_d = loss_dis_bce(y_fake, y_real) + gradient_penalty
-                # loss_d = y_fake.mean() - y_real.mean() + gradient_penalty
-                # loss_d = loss_dis_dcgan_soft(y_fake, y_real) + gradient_penalty
-                assert not torch.isnan(loss_d.data)
-                loss_d.backward()
-                self.optim_d.step()
+                    # D loss
+                    loss_d, real_loss, fake_loss = loss_dis_bce(y_fake, y_real)
+                    loss_d += gradient_penalty
+                    assert not torch.isnan(loss_d.data)
 
-                # update G
-                self.optim_g.zero_grad()
-                y_fake = self.dis(x_fake[:, :3])
+                    loss_rotate = 0.
+                    if use_rotate:
+                        # 3d loss
+                        loss_rotate, warped_dp = self.rotate_3d_loss(
+                            x_fake[:samples.size(0) // 2],
+                            random_camera_matrix[:samples.size(0) // 2],
+                            x_fake[samples.size(0) // 2:],
+                            random_camera_matrix[samples.size(0) // 2:],
+                            epoch >= self.start_occlusion_aware
+                        )
 
-                loss_rotate = 0.
-                if use_rotate:
-                    # 3d loss
-                    loss_rotate, warped_dp = self.rotate_3d_loss(
-                        x_fake[:samples.size(0) // 2],
-                        random_camera_matrix[:samples.size(0) // 2],
-                        x_fake[samples.size(0) // 2:],
-                        random_camera_matrix[samples.size(0) // 2:],
-                        epoch >= self.start_occlusion_aware
-                    )
+                        if self.lambda_depth > 0:
+                            # depth regularization
+                            loss_rotate += torch.mean(F.relu(self.depth_min - x_fake[:, -1]) ** 2) * self.lambda_depth
 
-                    if self.lambda_depth > 0:
-                        # depth regularization
-                        loss_rotate += torch.mean(F.relu(self.depth_min - x_fake[:, -1]) ** 2) * self.lambda_depth
+                        assert not torch.isnan(loss_rotate.data)
+                        lambda_rotate = 2 if size <= self.out_res else 4
+                        loss_rotate = loss_rotate * lambda_rotate
 
-                    assert not torch.isnan(loss_rotate.data)
-                    lambda_rotate = 2 if size <= self.out_res else 4
-                    loss_rotate = loss_rotate * lambda_rotate
+                    # P loss
+                    loss_g = loss_gen_bce(y_fake)
+                    gamma = get_gradient_ratios(loss_g, fake_loss, y_fake)
 
-                # backpropagate G loss
-                # bce loss function vs. D의 출력을 바로 사용
-                # loss_g = -y_fake.mean()
-                loss_g = loss_gen_bce(y_fake) + loss_rotate
-                # loss_g = loss_gen_dcgan_soft(y_fake) + loss_rotate
-                assert not torch.isnan(loss_g.data)
-                loss_g.backward()
-                self.optim_g.step()
+                    grad_d_factor = 1. / (1. - gamma)
+                    loss_pack_fake = fake_loss - loss_g
+                    scaled_loss_pack_fake = loss_pack_fake * grad_d_factor
+                    loss_pack = real_loss + torch.mean(scaled_loss_pack_fake) + gradient_penalty + loss_rotate
+                    assert not torch.isnan(loss_pack.data)
+
+                    GradientScaler.factor = gamma
+
+                    # G loss
+                    loss_g = torch.mean(loss_g) + loss_rotate
+                    assert not torch.isnan(loss_g.data)
+
+                    # backpropagate P loss
+                    self.optim_d.zero_grad()
+                    self.optim_g.zero_grad()
+
+                    loss_pack.backward()
+
+                    self.optim_d.step()
+                    self.optim_g.step()
 
                 running_loss_d += loss_d.item()
                 running_loss_g += loss_g.item()
@@ -218,21 +299,36 @@ class TrainerPGGAN:
                 epoch_loss_d += loss_d.item()
                 epoch_loss_g += loss_g.item()
 
+                if self.osgan:
+                    running_loss_p += loss_pack.item()
+                    epoch_loss_p += loss_pack.item()
+
                 iter_num += 1
 
                 # print current loss
                 if i % 500 == 0:
                     running_loss_d /= iter_num
                     running_loss_g /= iter_num
+                    if self.osgan:
+                        running_loss_p /= iter_num
                     print('iteration: %d, gp: %.2f' % (i, gradient_penalty))
-                    databar.set_description('loss_d: %.3f   loss_g: %.3f' % (running_loss_d, running_loss_g))
+                    if not self.osgan:
+                        discription = 'loss_d: %.3f   loss_g: %.3f' % (running_loss_d, running_loss_g)
+                    else:
+                        discription = 'loss_d: %.3f   loss_g: %.3f   loss_p: %.3f' \
+                                      % (running_loss_d, running_loss_g, running_loss_p)
+                    databar.set_description(discription)
                     iter_num = 0
                     running_loss_d = 0.
                     running_loss_g = 0.
+                    if self.osgan:
+                        running_loss_p = 0.
 
             # get total losses of one epoch
             epoch_losses_d[epoch - 1] = (epoch_loss_d / tot_iter_num)
             epoch_losses_g[epoch - 1] = (epoch_loss_g / tot_iter_num)
+            if self.osgan:
+                epoch_losses_p[epoch - 1] = (epoch_loss_p / tot_iter_num)
 
             # get checkpoint and save + generate samples
             checkpoint = {'gen': self.gen.state_dict(),
@@ -274,7 +370,10 @@ class TrainerPGGAN:
                     plt.close()
 
                 # save loss graph
-                save_loss_graph(epoch_losses_d, epoch_losses_g, path=self.loss_dir + 'loss')
+                if not self.osgan:
+                    save_loss_graph(epoch_losses_d, epoch_losses_g, path=self.loss_dir + 'loss')
+                else:
+                    save_loss_graph(epoch_losses_d, epoch_losses_g, path=self.loss_dir + 'loss', p=epoch_losses_p)
 
 
 
