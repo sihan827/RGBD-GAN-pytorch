@@ -10,7 +10,7 @@ import numpy as np
 
 from tqdm import tqdm
 from torch.utils.data import DataLoader
-from torchvision.utils import make_grid, save_image
+from torchvision.utils import make_grid
 
 from util.components import *
 from util.loss import loss_gen_bce, loss_dis_bce, Rotate3dLoss

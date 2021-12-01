@@ -4,14 +4,9 @@
 
 import argparse
 import os
-import sys
 import yaml
 from PIL import Image
-from tqdm import tqdm
-import numpy as np
 import torch
-import torch.nn as nn
-from torch.utils import data
 from torchvision.datasets import ImageFolder
 from torchvision.transforms import transforms
 

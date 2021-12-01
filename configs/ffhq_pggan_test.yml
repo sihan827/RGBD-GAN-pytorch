@@ -4,7 +4,7 @@ adam_lr_g: 0.0001 # 'lr in Adam optimizer'
 adam_lr_d: 0.0003 # 'lr in Adam optimizer'
 adam_beta1: 0.0 # 'beta1 in Adam optimizer'
 adam_beta2: 0.999 # 'beta2 in Adam optimizer'
-lambda_gp: 1. #'Lambda GP'
+lambda_gp: 1. # 'lambda for gradient penalty'
 
 ## schedule
 ### 8, 16, 32, 64, 128
