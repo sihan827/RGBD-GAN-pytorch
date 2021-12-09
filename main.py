@@ -79,6 +79,9 @@ if __name__ == '__main__':
     adam_beta2 = config['adam_beta2']
     lambda_gp = config['lambda_gp']
 
+    # evaluation (FID)
+    fid = config['fid']
+
     # OSGAN config
     osgan = config['osgan']
 
@@ -134,6 +137,7 @@ if __name__ == '__main__':
         'in_res': in_res,
         'out_res': out_res,
         'root_path': root,
+        'fid': fid,
         'osgan': osgan,
         'rgbd': rgbd
     }

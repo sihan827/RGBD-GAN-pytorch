@@ -7,6 +7,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+import time
+import warnings
 
 from tqdm import tqdm
 from torch.utils.data import DataLoader
@@ -17,6 +19,7 @@ from util.loss import loss_gen_bce, loss_dis_bce, Rotate3dLoss
 from util.camera_param import CameraParam
 from util.save_results import generate_sample_rgbd, convert_batch_images_rgbd, save_batch_sample_rgbd, save_loss_graph
 from util.osgan_module import get_gradient_ratios, GradientScaler
+from util import fid_score
 
 
 class TrainerPGGAN:
@@ -43,6 +46,8 @@ class TrainerPGGAN:
         self.out_dir = config_train['root_path'] + 'output/'
         self.weight_dir = config_train['root_path'] + 'weight/'
         self.loss_dir = config_train['root_path'] + 'loss/'
+
+        self.fid = config_train['fid']
 
         self.osgan = config_train['osgan']
 
@@ -80,7 +85,12 @@ class TrainerPGGAN:
         return z.to(self.device)
 
     def train(self):
+        warnings.filterwarnings(action='ignore')
         # initial definition
+        epoch_time_each = np.zeros(self.iteration)
+        epoch_time_accum = np.zeros(self.iteration)
+        running_time_accum = 0.
+
         running_loss_d = 0.
         epoch_losses_d = np.zeros(self.iteration)
         running_loss_g = 0.
@@ -89,6 +99,9 @@ class TrainerPGGAN:
             running_loss_p = 0.
             epoch_losses_p = np.zeros(self.iteration)
         iter_num = 0
+
+        if self.fid:
+            fids = np.zeros(self.iteration)
 
         if self.in_res == 4:
             c = 0
@@ -140,6 +153,7 @@ class TrainerPGGAN:
             print("epoch: %i/%i, batch size: %i" % (int(epoch), int(self.iteration), int(batch_size)))
             databar = tqdm(data_loader)
 
+            start = time.time()
             for i, samples in enumerate(databar):
 
                 # prepare samples
@@ -323,12 +337,19 @@ class TrainerPGGAN:
                     running_loss_g = 0.
                     if self.osgan:
                         running_loss_p = 0.
+            epoch_time = time.time() - start
+            print("elapsed_time (sec): %.3f" % epoch_time)
 
             # get total losses of one epoch
             epoch_losses_d[epoch - 1] = (epoch_loss_d / tot_iter_num)
             epoch_losses_g[epoch - 1] = (epoch_loss_g / tot_iter_num)
             if self.osgan:
                 epoch_losses_p[epoch - 1] = (epoch_loss_p / tot_iter_num)
+
+            # save elapsed time
+            epoch_time_each[epoch - 1] = epoch_time
+            running_time_accum += epoch_time
+            epoch_time_accum[epoch - 1] = running_time_accum
 
             # get checkpoint and save + generate samples
             checkpoint = {'gen': self.gen.state_dict(),
@@ -350,6 +371,49 @@ class TrainerPGGAN:
 
             with torch.no_grad():
                 self.gen.eval()
+                if self.fid:
+                    real_batch = []
+                    fake_batch = []
+
+                    for i, (real, _) in enumerate(data_loader):
+                        fid_latent = self.make_hidden(batch_size)
+                        thetas = torch.reshape(
+                            torch.tile(torch.tensor([1., 1., 0., 0.]), (batch_size, 1)), (batch_size, 4, 1, 1)
+                        ).to(self.device)
+                        fake = self.gen(fid_latent, theta=thetas)[:, :-1]
+                        real_batch.append(real.type(torch.FloatTensor))
+                        fake_batch.append(fake.type(torch.FloatTensor))
+
+                        if i * batch_size > 5000:
+                            break
+
+                    real_batch = torch.cat(real_batch, dim=0)
+                    fake_batch = torch.cat(fake_batch, dim=0)
+
+                    score = fid_score.calculate_fid_given_batches(real_batch, fake_batch, batch_size=32)
+                    fids[epoch - 1] = score
+                    print("fid: %.5f" % score)
+
+                    # save fid scores via iteration
+                    plt.figure()
+                    plt.plot(fids, '-', color='red', label='FID')
+                    plt.xlabel('iteration')
+                    plt.ylabel('FID')
+                    plt.legend()
+                    plt.tight_layout()
+                    plt.savefig(self.loss_dir + 'fid_iteration')
+                    plt.close()
+
+                    # save fid scores via elapsed time
+                    plt.figure()
+                    plt.plot(epoch_time_accum, fids, '-', color='red', label='FID')
+                    plt.xlabel('elapsed time')
+                    plt.ylabel('FID')
+                    plt.legend()
+                    plt.tight_layout()
+                    plt.savefig(self.loss_dir + 'fid_time')
+                    plt.close()
+
                 if epoch == self.iteration:
                     torch.save(checkpoint, self.checkpoint_dir + 'checkpoint_epoch_%d.pth' % epoch)
                     torch.save(gen_parameters, self.weight_dir + 'gen_weight_epoch_%d.pth' % epoch)
@@ -369,11 +433,72 @@ class TrainerPGGAN:
                     plt.savefig(self.out_dir + 'size_%i_epoch_%d' % (size, epoch))
                     plt.close()
 
+                # save elapsed time via iteration
+                plt.figure()
+                plt.plot(epoch_time_each, '-', color='red', label='elapsed time')
+                plt.xlabel('iteration')
+                plt.ylabel('elapsed time')
+                plt.legend()
+                plt.tight_layout()
+                plt.savefig(self.loss_dir + 'time_iteration')
+                plt.close()
+
                 # save loss graph
                 if not self.osgan:
-                    save_loss_graph(epoch_losses_d, epoch_losses_g, path=self.loss_dir + 'loss')
+                    save_loss_graph(epoch_losses_d, epoch_losses_g, path=self.loss_dir + 'loss_iteration')
+                    save_loss_graph(epoch_losses_d, epoch_losses_g, path=self.loss_dir + 'loss_time', x=epoch_time_accum)
                 else:
-                    save_loss_graph(epoch_losses_d, epoch_losses_g, path=self.loss_dir + 'loss', p=epoch_losses_p)
+                    save_loss_graph(
+                        epoch_losses_d, epoch_losses_g, path=self.loss_dir + 'loss_iteration', p=epoch_losses_p
+                    )
+                    save_loss_graph(
+                        epoch_losses_d, epoch_losses_g, path=self.loss_dir + 'loss_time', x=epoch_time_accum, p=epoch_losses_p
+                    )
 
+                # save all results in txt file
+                txt = open(self.loss_dir + 'train_log.txt', 'at')
+                if self.osgan:
+                    if self.fid:
+                        txt.write(
+                            'epoch:%d,d_loss:%.6f,g_loss:%.6f,p_loss:%.6f,fid:%.6f,elapsed_time:%.6f\n' % (
+                                epoch,
+                                epoch_losses_d[epoch - 1],
+                                epoch_losses_g[epoch - 1],
+                                epoch_losses_p[epoch - 1],
+                                fids[epoch - 1],
+                                epoch_time_each[epoch - 1]
+                            )
+                        )
+                    else:
+                        txt.write(
+                            'epoch:%d,d_loss:%.6f,g_loss:%.6f,p_loss:%.6f,elapsed_time:%.6f\n' % (
+                                epoch,
+                                epoch_losses_d[epoch - 1],
+                                epoch_losses_g[epoch - 1],
+                                epoch_losses_p[epoch - 1],
+                                epoch_time_each[epoch - 1]
+                            )
+                        )
+                else:
+                    if self.fid:
+                        txt.write(
+                            'epoch:%d,d_loss:%.6f,g_loss:%.6f,fid:%.6f,elapsed_time:%.6f\n' % (
+                                epoch,
+                                epoch_losses_d[epoch - 1],
+                                epoch_losses_g[epoch - 1],
+                                fids[epoch - 1],
+                                epoch_time_each[epoch - 1]
+                            )
+                        )
+                    else:
+                        txt.write(
+                            'epoch:%d,d_loss:%.6f,g_loss:%.6f,elapsed_time:%.6f\n' % (
+                                epoch,
+                                epoch_losses_d[epoch - 1],
+                                epoch_losses_g[epoch - 1],
+                                epoch_time_each[epoch - 1]
+                            )
+                        )
+                txt.close()
 
 

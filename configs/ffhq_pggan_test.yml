@@ -24,7 +24,7 @@ architecture: pggan # stylegan, pggan, deepvoxels
 res_dis: False
 use_cuda: True
 rgbd: True # rgb or rgbd
-osgan: True
+osgan: False
 # rotate_conv_input: False
 lambda_depth: 10
 depth_min: 1.0
@@ -33,6 +33,9 @@ lambda_geometric: 3
 ## starting rotation (if rgbd: True)
 start_rotation: 2
 start_occlusion_aware: 2
+
+## evaluation metric
+fid: True
 
 ## camera parameter prior
 ## rotation angle range (+-radian)
