@@ -21,6 +21,8 @@ from util.save_results import generate_sample_rgbd, convert_batch_images_rgbd, s
 from util.osgan_module import get_gradient_ratios, GradientScaler
 from util import fid_score
 
+torch.multiprocessing.set_sharing_strategy('file_system')
+
 
 class TrainerPGGAN:
     """
@@ -384,7 +386,7 @@ class TrainerPGGAN:
                         real_batch.append(real.type(torch.FloatTensor))
                         fake_batch.append(fake.type(torch.FloatTensor))
 
-                        if i * batch_size > 5000:
+                        if i * batch_size > 2500:
                             break
 
                     real_batch = torch.cat(real_batch, dim=0)
