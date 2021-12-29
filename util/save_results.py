@@ -8,6 +8,9 @@ import matplotlib.pyplot as plt
 
 
 def generate_sample_rgbd(gen, fixed_z, test_y_rotate, angle_range=8, num_sample=4, device=torch.device("cuda")):
+    """
+    generate sample images with multiple y angles using given generator model 
+    """
     latent_z = fixed_z[:num_sample]
     latent_z = torch.cat(
         [torch.cat([latent_z[i].reshape(1, -1, 1, 1)] * angle_range, dim=0) for i in range(num_sample)],
@@ -17,7 +20,7 @@ def generate_sample_rgbd(gen, fixed_z, test_y_rotate, angle_range=8, num_sample=
     theta = torch.zeros((num_sample * angle_range, 6), dtype=torch.float32).to(device)
     theta[:, 1] = torch.tile(torch.linspace(-test_y_rotate, test_y_rotate, angle_range), (num_sample, ))
     theta = torch.reshape(
-        # rigid transform parameters 전부 사용 (9) vs 오직 x,y rotation만 사용 (4)
+        # only use x,y rotations with cos, sin functions
         # torch.cat([torch.cos(theta[:, :3]), torch.sin(theta[:, :3]), theta[:, 3:]], dim=1),
         torch.cat([torch.cos(theta[:, :2]), torch.sin(theta[:, :2])], dim=1),
         # (theta.shape[0], 9, 1, 1)
@@ -25,7 +28,6 @@ def generate_sample_rgbd(gen, fixed_z, test_y_rotate, angle_range=8, num_sample=
     )
 
     sample_x = gen(latent_z, theta=theta)
-    # sample_x, sample_x_depth = convert_batch_images(sample_x, num_sample, angle_range)
 
     return sample_x
 
@@ -41,7 +43,7 @@ def convert_batch_images_rgbd(x, rows, grid_mode=True):
     x = torch.clip(x * 127.5 + 127.5, 0., 255.).type(torch.uint8)
     depth = torch.clip(1 / (depth + 1e-8) * 128., 0., 255.).type(torch.uint8)
     _, _, h, w = x.shape
-    # x = torch.cat([x, depth], dim=1).reshape((rows * 2, cols, 3, h, w))
+    
     if grid_mode:
         x = x.reshape((-1, rows, 3, h, w))
         depth = depth.reshape((-1, rows, 1, h, w))

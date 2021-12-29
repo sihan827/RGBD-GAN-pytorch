@@ -12,20 +12,23 @@ from util.warp import warp, inv_warp, bilinear_sampling
 
 def loss_gen_bce(y_fake):
     """
-    loss function with BCE on G
+    loss function with binary cross entropy on generator
     """
     label_real = torch.ones_like(y_fake)
     loss = F.binary_cross_entropy_with_logits(y_fake, label_real, reduction='none')
     return loss
 
 
-def loss_gen_dcgan_soft(y_fake):
-    return torch.mean(F.softplus(-y_fake))
+def loss_gen_wasserstein(y_fake):
+    """
+    loss function with wasserstein distance on generator
+    """
+    return -torch.mean(y_fake)
 
 
 def loss_dis_bce(y_fake, y_real):
     """
-    loss function with BCE on D
+    loss function with binary cross entropy on discriminator
     """
     label_fake = torch.zeros_like(y_fake)
     label_real = torch.ones_like(y_real)
@@ -35,8 +38,8 @@ def loss_dis_bce(y_fake, y_real):
     return (torch.mean(fake_loss) + real_loss) / 2, real_loss, fake_loss
 
 
-def loss_dis_dcgan_soft(y_fake, y_real):
-    return (torch.mean(F.softplus(y_fake)) + torch.mean(F.softplus(-y_real))) / 2
+def loss_dis_wasserstein(y_fake, y_real):
+    return (torch.mean(y_fake) + torch.mean(-y_real)) / 2
 
 
 class Rotate3dLoss:

@@ -170,7 +170,7 @@ class TrainerPGGAN:
                     thetas = self.camera_param.get_sample_param(samples.size(0))
                     random_camera_matrix = self.camera_param.get_ex_matrices(thetas)
                     thetas = torch.reshape(
-                        # rigid transform parameters 전부 사용 (9) vs 오직 x,y rotation만 사용 (4)
+                        # only use x,y rotations with cos, sin
                         # torch.cat([torch.cos(thetas[:, :3]), torch.sin(thetas[:, :3]), thetas[:, 3:]], dim=1),
                         torch.cat([torch.cos(thetas[:, :2]), torch.sin(thetas[:, :2])], dim=1),
                         # (samples.size(0), 9, 1, 1)

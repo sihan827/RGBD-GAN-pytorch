@@ -53,7 +53,7 @@ class GeneratorBlock(nn.Module):
             self.upsample = None
             if rgbd:
                 # add conditional channel to latent z
-                # rigid transform parameters 전부 사용 (9) vs 오직 x,y rotation만 사용 (4)
+                # only use x,y rotations with cos, sin
                 self.conv1 = EqualizedLRConv2d(in_ch + 4, out_ch, kernel_size=(4, 4), stride=(1, 1), padding=(3, 3))
             else:
                 self.conv1 = EqualizedLRConv2d(in_ch, out_ch, kernel_size=(4, 4), stride=(1, 1), padding=(3, 3))
@@ -63,12 +63,6 @@ class GeneratorBlock(nn.Module):
 
         self.conv2 = EqualizedLRConv2d(out_ch, out_ch, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
         self.relu = nn.LeakyReLU(0.2)
-        # self.pixelnorm = PixelwiseNorm()
-
-        # nn.init.normal_(self.conv1.w)
-        # nn.init.normal_(self.conv2.w)
-        # nn.init.zeros_(self.conv1.b)
-        # nn.init.zeros_(self.conv2.b)
 
     def forward(self, x):
         if self.upsample is not None:
@@ -93,7 +87,7 @@ class DiscriminatorBlock(nn.Module):
         self.res = res
         if base:
             # self.minibatchstd = MinibatchStd()
-            # minibatchstd 사용시 conv1 in_ch에 1 더하기
+            # if use minibatchstd, add 1 to conv1 in_ch
             self.conv1 = EqualizedLRConv2d(in_ch, out_ch, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
             self.conv2 = EqualizedLRConv2d(out_ch, out_ch, kernel_size=(4, 4), stride=(1, 1))
             self.outlayer = nn.Sequential(
@@ -109,10 +103,6 @@ class DiscriminatorBlock(nn.Module):
             self.outlayer = nn.AvgPool2d(kernel_size=(2, 2), stride=(2, 2))
 
         self.relu = nn.LeakyReLU(0.2)
-        # nn.init.normal_(self.conv1.w)
-        # nn.init.normal_(self.conv2.w)
-        # nn.init.zeros_(self.conv1.b)
-        # nn.init.zeros_(self.conv2.b)
 
     def forward(self, x):
         # if self.minibatchstd is not None:
@@ -159,7 +149,7 @@ class PGGANGenerator(nn.Module):
         if self.rgbd and theta is None:
             assert False, "if rgbd is True, theta must not be None"
         if self.rgbd:
-            # 10을 곱하느냐 마느냐
+            # select coefficient value to thetas (default: 10)
             x = torch.cat([x, theta * 10], dim=1)
 
         for block in self.current_net[:self.depth - 1]:
